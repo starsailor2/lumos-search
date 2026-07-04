@@ -18,16 +18,19 @@
     "appId": "com.starsailor.lumos",
     "productName": "Lumos Search",
     "win": {
+      "icon": "public/icon.ico",
       "target": "nsis",
       "signAndEditExecutable": false
     },
     "nsis": {
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico",
       "oneClick": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": true
     },
-    "files": [ "src/**/*" ]
+    "files": [ "src/**/*", "public/**/*" ]
   }
 }

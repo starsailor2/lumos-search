@@ -16,6 +16,7 @@ const WINDOW_W = 720;
 const WINDOW_H = 500;
 const HOTKEY = 'Alt+Space';
 const MAX_RESULTS = 40;
+const APP_ICON = path.join(__dirname, '..', 'public', 'icon.ico');
 
 let win = null;
 let tray = null;
@@ -194,6 +195,7 @@ function createWindow() {
   win = new BrowserWindow({
     width: WINDOW_W,
     height: WINDOW_H,
+    icon: APP_ICON,
     show: false,
     frame: false,
     transparent: true,
@@ -239,21 +241,7 @@ function toggleWindow() {
 }
 
 function makeTrayIcon() {
-  // Simple 16x16 blue dot, generated in memory (no asset files needed)
-  const size = 16;
-  const buf = Buffer.alloc(size * size * 4);
-  const cx = 7.5, cy = 7.5, r = 6.5;
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const d = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
-      const o = (y * size + x) * 4;
-      if (d <= r) {
-        buf[o] = 235; buf[o + 1] = 165; buf[o + 2] = 50; // BGR: blue-ish
-        buf[o + 3] = d > r - 1 ? Math.round(255 * (r - d)) : 255;
-      }
-    }
-  }
-  return nativeImage.createFromBitmap(buf, { width: size, height: size });
+  return nativeImage.createFromPath(APP_ICON);
 }
 
 function createTray() {
