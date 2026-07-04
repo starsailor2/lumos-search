@@ -1,5 +1,6 @@
 // Lumos Search — indexer worker thread
-// Crawls every available drive letter and the Start Menu. STRICTLY read-only:
+// Crawls every available drive letter plus shortcut locations like the Start Menu
+// and Desktop. STRICTLY read-only:
 // uses only fs.readdir / fs.existsSync — never writes, renames, or deletes.
 
 const { parentPort } = require('worker_threads');
@@ -55,7 +56,7 @@ function listDrives() {
   return drives;
 }
 
-function startMenuDirs() {
+function shortcutDirs() {
   if (process.platform !== 'win32') return [];
   const dirs = [];
   if (process.env.ProgramData) {
@@ -63,6 +64,12 @@ function startMenuDirs() {
   }
   if (process.env.APPDATA) {
     dirs.push(path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs'));
+  }
+  if (process.env.USERPROFILE) {
+    dirs.push(path.join(process.env.USERPROFILE, 'Desktop'));
+  }
+  if (process.env.PUBLIC) {
+    dirs.push(path.join(process.env.PUBLIC, 'Desktop'));
   }
   return dirs.filter((d) => { try { return fs.existsSync(d); } catch { return false; } });
 }
@@ -106,8 +113,8 @@ async function walk(root, { appsOnly = false } = {}) {
 
 (async () => {
   try {
-    // 1) Apps first — they're what people search most
-    for (const d of startMenuDirs()) await walk(d, { appsOnly: true });
+    // 1) Apps first — Start Menu and Desktop shortcuts behave like app launchers
+    for (const d of shortcutDirs()) await walk(d, { appsOnly: true });
     flush();
 
     // 2) Every drive

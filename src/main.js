@@ -23,7 +23,7 @@ let indexerWorker = null;
 
 // ---------------------------------------------------------------------------
 // In-memory index (parallel arrays keep memory low for millions of entries)
-// flags: 1 = directory, 2 = application (Start Menu shortcut), 0 = file
+// flags: 1 = directory, 2 = application shortcut (Start Menu or Desktop), 0 = file
 // ---------------------------------------------------------------------------
 const idx = {
   paths: [],       // full path

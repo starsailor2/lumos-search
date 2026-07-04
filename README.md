@@ -12,7 +12,7 @@ It contains no code paths that rename, move, delete, or modify your files.
 
 - **Global hotkey**: `Alt+Space` from anywhere (falls back to `Ctrl+Space` if taken).
 - **Full-drive index**: crawls every drive letter (C:\, D:\, …) in a background worker thread.
-- **App search**: Start Menu shortcuts are indexed and ranked first, like Spotlight.
+- **App search**: Start Menu and Desktop shortcuts are indexed and ranked first, like Spotlight.
 - **Smart ranking**: exact > prefix > word-boundary > substring > fuzzy matches; shallower paths rank higher.
 - **Keyboard-first**: `↑↓` navigate · `Enter` open · `Ctrl+Enter` reveal in File Explorer · `Esc` close.
 - **Instant startup**: index is cached in the app's own data folder, then refreshed in the background.
@@ -125,8 +125,9 @@ This also removes the index cache (`%APPDATA%\lumos-search`).
 
 - Renderer is sandboxed: `sandbox: true`, `contextIsolation: true`, no `nodeIntegration`.
 - The preload exposes exactly four capabilities: `search`, `open`, `reveal`, `hide`.
-- The only OS actions taken on your data are `shell.openPath` (open with default
-  app) and `shell.showItemInFolder` (navigate in File Explorer).
+- The only OS actions taken on your data are `shell.openPath` (open files or
+  shortcut targets with the default handler) and `shell.showItemInFolder`
+  (navigate in File Explorer).
 - The indexer uses only directory reads (`fs.readdirSync`); symlinks are skipped.
 - The only file the app ever writes is its own index cache in `%APPDATA%\lumos-search\`.
 
