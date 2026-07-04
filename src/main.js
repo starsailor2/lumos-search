@@ -14,13 +14,14 @@ const { Worker } = require('worker_threads');
 
 const WINDOW_W = 720;
 const WINDOW_H = 500;
-const HOTKEY = 'Alt+Space';
+const HOTKEY = 'Alt+, / Alt+X';
 const MAX_RESULTS = 40;
 const APP_ICON = path.join(__dirname, '..', 'public', 'icon.ico');
 
 let win = null;
 let tray = null;
 let indexerWorker = null;
+// double-space detection removed to avoid capturing normal spacebar events
 
 // ---------------------------------------------------------------------------
 // In-memory index (parallel arrays keep memory low for millions of entries)
@@ -290,9 +291,17 @@ if (!gotLock) {
       app.setLoginItemSettings({ openAtLogin: true });
     }
 
-    if (!globalShortcut.register(HOTKEY, toggleWindow)) {
-      // Fallback if Alt+Space is taken
-      globalShortcut.register('CommandOrControl+Space', toggleWindow);
+    // Register both Alt+, and Alt+X. If a primary is taken, register a CommandOrControl fallback.
+    const HOTKEYS = ['Alt+,', 'Alt+X'];
+    const FALLBACKS = ['CommandOrControl+,', 'CommandOrControl+X'];
+    for (let i = 0; i < HOTKEYS.length; i++) {
+      try {
+        if (!globalShortcut.register(HOTKEYS[i], toggleWindow)) {
+          globalShortcut.register(FALLBACKS[i], toggleWindow);
+        }
+      } catch (e) {
+        try { globalShortcut.register(FALLBACKS[i], toggleWindow); } catch (e2) { /* ignore */ }
+      }
     }
   });
 
