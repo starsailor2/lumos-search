@@ -1,26 +1,36 @@
 // Lumos Search — main process
-// Read-only by design: the ONLY actions ever performed on user data are
-// shell.openPath (open with default app) and shell.showItemInFolder (navigate).
-// No fs.write / rename / delete APIs are used on user files anywhere.
+// Read-only by design on user files: the only actions ever performed on
+// files/folders are shell.openPath (open with default app) and
+// shell.showItemInFolder (navigate). No fs.write/rename/delete APIs touch
+// user files anywhere. The app *does* now persist its own local app-data
+// (config, usage stats, optional clipboard history, icon cache) in userData
+// — never in user files, always local, and clipboard capture can be fully
+// disabled from Settings or the tray menu.
 
 const {
-  app, BrowserWindow, globalShortcut, ipcMain, shell,
-  Tray, Menu, nativeImage, screen
+  app, BrowserWindow, globalShortcut, ipcMain, shell, clipboard,
+  Tray, Menu, nativeImage, screen, dialog
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { Worker } = require('worker_threads');
+const { loadConfig, getConfig, updateConfig } = require('./config');
+const { loadFrecency, recordLaunch, resetFrecency, frecencyBoost, flushFrecency } = require('./frecency');
+const { startClipboardWatch, applyRetentionChange } = require('./providers/clipboard');
+const { getIcon } = require('./icons');
+const { createSettingsWindow } = require('./settings-window');
+const PROVIDERS = require('./providers');
 
 const WINDOW_W = 720;
 const WINDOW_H = 500;
-const HOTKEY = 'Alt+, / Alt+X';
-const MAX_RESULTS = 40;
 const APP_ICON = path.join(__dirname, '..', 'public', 'icon.ico');
+const TEXT_PREVIEW_EXTS = new Set(['.txt', '.md', '.json', '.log', '.csv', '.js', '.ts', '.py', '.yml', '.yaml', '.xml', '.ini', '.cfg', '.conf']);
 
 let win = null;
 let tray = null;
 let indexerWorker = null;
+let config = null;
 // double-space detection removed to avoid capturing normal spacebar events
 
 // ---------------------------------------------------------------------------
@@ -51,68 +61,30 @@ function resetIndex() {
 }
 
 // ---------------------------------------------------------------------------
-// Search with relevance scoring
+// Search orchestrator — runs each provider (see src/providers/), merges,
+// sorts by score, dedupes by id, and caps at config.maxResults.
 // ---------------------------------------------------------------------------
-function isSubsequence(q, s) {
-  let qi = 0;
-  for (let si = 0; si < s.length && qi < q.length; si++) {
-    if (s.charCodeAt(si) === q.charCodeAt(qi)) qi++;
-  }
-  return qi === q.length;
-}
-
-function scoreEntry(i, q, pathMode) {
-  const name = idx.names[i];
-  let s = -1;
-  if (name === q) s = 1000;
-  else if (name.startsWith(q)) s = 880 - Math.min(name.length - q.length, 80);
-  else {
-    const at = name.indexOf(q);
-    if (at > 0) {
-      const prev = name[at - 1];
-      const boundary = prev === ' ' || prev === '-' || prev === '_' || prev === '.' || prev === '(';
-      s = (boundary ? 720 : 520) - Math.min(at, 100);
-    } else if (q.length >= 3 && q.length <= 20 && name.length < 80 && isSubsequence(q, name)) {
-      s = 220 - Math.min(name.length - q.length, 60);
-    } else if (pathMode && idx.paths[i].toLowerCase().includes(q)) {
-      s = 300;
-    }
-  }
-  if (s < 0) return -1;
-  const f = idx.flags[i];
-  if (f === 2) s += 320;               // apps first, Spotlight-style
-  else if (f === 1) s += 40;           // folders slightly above files
-  // shallower paths are usually more relevant
-  const depth = (idx.paths[i].match(/[\\/]/g) || []).length;
-  s -= Math.min(depth * 4, 60);
-  return s;
-}
-
 function search(query) {
-  const q = String(query || '').trim().toLowerCase();
+  const q = String(query || '').trim();
   if (q.length < 1) return { results: [], status: idx.status, indexed: idx.count };
-  const pathMode = q.includes('\\') || q.includes('/');
-  const hits = [];
-  const n = idx.count;
-  for (let i = 0; i < n; i++) {
-    const s = scoreEntry(i, q, pathMode);
-    if (s > 0) hits.push([s, i]);
+  const ctx = { q, qLower: q.toLowerCase(), idx, config, frecencyBoost };
+
+  let all = [];
+  for (const provider of PROVIDERS) {
+    try { all = all.concat(provider.search(ctx) || []); } catch (e) { console.error('provider error:', e); }
   }
-  hits.sort((a, b) => b[0] - a[0]);
+  all.sort((a, b) => b.score - a.score);
+
   const results = [];
   const seen = new Set();
-  for (let k = 0; k < hits.length && results.length < MAX_RESULTS; k++) {
-    const i = hits[k][1];
-    const p = idx.paths[i];
-    if (seen.has(p)) continue;
-    seen.add(p);
-    results.push({
-      name: idx.names[i],
-      path: p,
-      kind: idx.flags[i] === 2 ? 'app' : idx.flags[i] === 1 ? 'folder' : 'file',
-    });
+  const max = config.maxResults;
+  for (let k = 0; k < all.length && results.length < max; k++) {
+    const r = all[k];
+    if (seen.has(r.id)) continue;
+    seen.add(r.id);
+    results.push(r);
   }
-  return { results, status: idx.status, indexed: idx.count, matches: hits.length };
+  return { results, status: idx.status, indexed: idx.count, matches: all.length };
 }
 
 // ---------------------------------------------------------------------------
@@ -151,8 +123,9 @@ function saveCache() {
 function startIndexing() {
   if (indexerWorker) return;
   idx.status = idx.count ? 'ready' : 'indexing';
-  const fresh = { paths: [], names: [], flags: [] };
-  indexerWorker = new Worker(path.join(__dirname, 'indexer.js'));
+  indexerWorker = new Worker(path.join(__dirname, 'indexer.js'), {
+    workerData: { roots: config.indexedRoots, excludedDirs: config.excludedDirs },
+  });
   let freshItems = [];
 
   indexerWorker.on('message', (msg) => {
@@ -247,29 +220,129 @@ function makeTrayIcon() {
 
 function createTray() {
   tray = new Tray(makeTrayIcon());
-  tray.setToolTip('Lumos Search — ' + HOTKEY);
+  refreshTray();
+  tray.on('click', toggleWindow);
+}
+
+function refreshTray() {
+  const hotkeyLabel = config.hotkeys.filter(Boolean).join(' / ') || '(unset)';
+  tray.setToolTip('Lumos Search — ' + hotkeyLabel);
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Show search (' + HOTKEY + ')', click: showWindow },
+    { label: 'Show search (' + hotkeyLabel + ')', click: showWindow },
+    { label: 'Settings…', click: () => createSettingsWindow() },
+    {
+      label: 'Clipboard history enabled',
+      type: 'checkbox',
+      checked: config.clipboard.enabled,
+      click: (item) => { config = updateConfig({ clipboard: { enabled: item.checked } }); refreshTray(); },
+    },
     { label: 'Rebuild index', click: () => { if (!indexerWorker) startIndexing(); } },
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() },
   ]));
-  tray.on('click', toggleWindow);
 }
 
 // ---------------------------------------------------------------------------
-// IPC — the complete surface the renderer can reach (read + navigate only)
+// Hotkey (re-)registration — extracted so Settings can change it live
 // ---------------------------------------------------------------------------
-ipcMain.handle('search', (_e, q) => search(q));
-ipcMain.on('open-item', (_e, p) => {
-  if (typeof p === 'string' && p.length) shell.openPath(p);
-  hideWindow();
+function registerHotkeys() {
+  globalShortcut.unregisterAll();
+  const hotkeys = config.hotkeys;
+  const fallbacks = config.hotkeyFallbacks;
+  for (let i = 0; i < hotkeys.length; i++) {
+    try {
+      if (!globalShortcut.register(hotkeys[i], toggleWindow)) {
+        if (fallbacks[i]) globalShortcut.register(fallbacks[i], toggleWindow);
+      }
+    } catch (e) {
+      try { if (fallbacks[i]) globalShortcut.register(fallbacks[i], toggleWindow); } catch (e2) { /* ignore */ }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// IPC — the renderer surface. The main search window's preload exposes only
+// read/launch/navigate capabilities; config *writes* are reachable solely
+// through the Settings window's separate preload (preload-settings.js).
+// ---------------------------------------------------------------------------
+const KNOWN_ACTIONS = new Set(['open', 'reveal', 'copy', 'paste', 'open-external']);
+
+ipcMain.handle('search', (_e, q) => search(String(q || '').slice(0, 500)));
+
+ipcMain.on('run-action', (_e, payload) => {
+  if (!payload || typeof payload !== 'object') return;
+  const { action, result } = payload;
+  if (!KNOWN_ACTIONS.has(action) || !result || typeof result !== 'object') return;
+  const data = result.data || {};
+
+  if (action === 'open' && typeof data.path === 'string') {
+    shell.openPath(data.path);
+    recordLaunch(data.path);
+    hideWindow();
+  } else if (action === 'reveal' && typeof data.path === 'string') {
+    shell.showItemInFolder(data.path);
+    hideWindow();
+  } else if (action === 'open-external' && typeof data.url === 'string' && /^https?:\/\//i.test(data.url)) {
+    shell.openExternal(data.url);
+    hideWindow();
+  } else if (action === 'copy' && typeof data.text === 'string') {
+    clipboard.writeText(data.text);
+    hideWindow();
+  } else if (action === 'paste' && typeof data.text === 'string') {
+    clipboard.writeText(data.text);
+    hideWindow();
+  }
 });
-ipcMain.on('reveal-item', (_e, p) => {
-  if (typeof p === 'string' && p.length) shell.showItemInFolder(p);
-  hideWindow();
-});
+
 ipcMain.on('hide-window', () => hideWindow());
+ipcMain.on('open-settings', () => createSettingsWindow());
+
+ipcMain.handle('get-icon', (_e, payload) => {
+  if (!payload || typeof payload.path !== 'string') return null;
+  return getIcon(payload.path, payload.kind);
+});
+
+ipcMain.handle('preview-file', async (_e, p) => {
+  if (typeof p !== 'string' || !p) return null;
+  const ext = path.extname(p).toLowerCase();
+  if (!TEXT_PREVIEW_EXTS.has(ext)) return null;
+  try {
+    const stat = await fs.promises.stat(p);
+    if (stat.size > 2_000_000) return null; // skip huge files
+    const text = await fs.promises.readFile(p, 'utf8');
+    return text.slice(0, 2000);
+  } catch {
+    return null;
+  }
+});
+
+// --- Settings-window-only IPC (write access to config lives only here) ----
+ipcMain.handle('get-config', () => getConfig());
+ipcMain.handle('update-config', (_e, patch) => {
+  if (!patch || typeof patch !== 'object') return getConfig();
+  const prev = config;
+  config = updateConfig(patch);
+  if (JSON.stringify(prev.hotkeys) !== JSON.stringify(config.hotkeys) ||
+      JSON.stringify(prev.hotkeyFallbacks) !== JSON.stringify(config.hotkeyFallbacks)) {
+    registerHotkeys();
+  }
+  if (JSON.stringify(prev.indexedRoots) !== JSON.stringify(config.indexedRoots) ||
+      JSON.stringify(prev.excludedDirs) !== JSON.stringify(config.excludedDirs)) {
+    if (!indexerWorker) startIndexing();
+  }
+  if (prev.clipboard.retainAcrossRestarts !== config.clipboard.retainAcrossRestarts) {
+    applyRetentionChange(config);
+  }
+  refreshTray();
+  return config;
+});
+ipcMain.handle('pick-folder', async () => {
+  const res = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+  if (res.canceled || !res.filePaths.length) return null;
+  return res.filePaths[0];
+});
+ipcMain.on('reset-frecency', () => resetFrecency());
+ipcMain.on('rebuild-index', () => { if (!indexerWorker) startIndexing(); });
 
 // ---------------------------------------------------------------------------
 // App lifecycle
@@ -281,30 +354,25 @@ if (!gotLock) {
   app.on('second-instance', () => showWindow());
 
   app.whenReady().then(() => {
+    config = loadConfig();
+    loadFrecency();
     createWindow();
     createTray();
     loadCache();          // instant results from last run
     startIndexing();      // fresh crawl in the background
+    startClipboardWatch(getConfig);
 
     // When installed (packaged), start automatically at Windows login
     if (app.isPackaged) {
       app.setLoginItemSettings({ openAtLogin: true });
     }
 
-    // Register both Alt+, and Alt+X. If a primary is taken, register a CommandOrControl fallback.
-    const HOTKEYS = ['Alt+,', 'Alt+X'];
-    const FALLBACKS = ['CommandOrControl+,', 'CommandOrControl+X'];
-    for (let i = 0; i < HOTKEYS.length; i++) {
-      try {
-        if (!globalShortcut.register(HOTKEYS[i], toggleWindow)) {
-          globalShortcut.register(FALLBACKS[i], toggleWindow);
-        }
-      } catch (e) {
-        try { globalShortcut.register(FALLBACKS[i], toggleWindow); } catch (e2) { /* ignore */ }
-      }
-    }
+    registerHotkeys();
   });
 
   app.on('window-all-closed', (e) => { /* keep running in tray */ });
-  app.on('will-quit', () => globalShortcut.unregisterAll());
+  app.on('will-quit', () => {
+    globalShortcut.unregisterAll();
+    flushFrecency();
+  });
 }

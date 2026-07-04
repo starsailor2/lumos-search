@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: file:;">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { background: transparent; overflow: hidden; height: 100%;
@@ -32,7 +32,7 @@
   #q::placeholder { color: rgba(255,255,255,0.28); }
 
   #status {
-    font-size: 11px; color: rgba(255,255,255,0.35); white-space: nowrap;
+    font-size: 11px; color: rgba(255,255,255,0.35); white-space: nowrap; cursor: pointer;
   }
 
   #results {
@@ -52,10 +52,14 @@
   .icon {
     width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
-    font-size: 17px; background: rgba(255,255,255,0.07);
+    font-size: 17px; background: rgba(255,255,255,0.07); overflow: hidden;
   }
+  .icon img { width: 22px; height: 22px; object-fit: contain; }
   .icon.app    { background: rgba(78,161,255,0.18); }
   .icon.folder { background: rgba(255,193,79,0.15); }
+  .icon.calc, .icon.convert { background: rgba(120,220,140,0.15); }
+  .icon.websearch { background: rgba(200,150,255,0.15); }
+  .icon.clip, .icon.snippet { background: rgba(255,193,79,0.15); }
   .meta { min-width: 0; flex: 1; }
   .name { color: #f0f0f3; font-size: 14.5px; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; }
@@ -63,6 +67,14 @@
     overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
   .kind { font-size: 10px; color: rgba(255,255,255,0.3); text-transform: uppercase;
     letter-spacing: 0.08em; flex-shrink: 0; }
+
+  #preview {
+    display: none; border-top: 1px solid rgba(255,255,255,0.07);
+    padding: 10px 18px; max-height: 140px; overflow-y: auto;
+    font-size: 11.5px; color: rgba(255,255,255,0.55); white-space: pre-wrap; word-break: break-word;
+  }
+  #preview.has { display: block; }
+  #preview img { max-width: 100%; max-height: 120px; display: block; }
 
   #hints {
     display: none; padding: 8px 18px;
@@ -80,13 +92,14 @@
 <div id="panel">
   <div id="searchbox">
     <span id="glass">&#128269;</span>
-    <input id="q" placeholder="Search apps, files, folders&hellip;" autofocus spellcheck="false">
-    <span id="status"></span>
+    <input id="q" placeholder="Search apps, files, folders, or type a calculation&hellip;" autofocus spellcheck="false">
+    <span id="status" title="Open settings"></span>
   </div>
   <div id="results"></div>
+  <div id="preview"></div>
   <div id="hints">
-    <span><kbd>&#8629;</kbd> Open</span>
-    <span><kbd>Ctrl</kbd>+<kbd>&#8629;</kbd> Show in Explorer</span>
+    <span><kbd>&#8629;</kbd> <span id="hintPrimary">Open</span></span>
+    <span id="hintSecondary" style="display:none"><kbd>Ctrl</kbd>+<kbd>&#8629;</kbd> <span id="hintSecondaryLabel">Show in Explorer</span></span>
     <span><kbd>&#8593;&#8595;</kbd> Navigate</span>
     <span><kbd>Esc</kbd> Close</span>
   </div>
@@ -97,13 +110,21 @@
   const $results = document.getElementById('results');
   const $status = document.getElementById('status');
   const $hints = document.getElementById('hints');
+  const $preview = document.getElementById('preview');
+  const $hintPrimary = document.getElementById('hintPrimary');
+  const $hintSecondary = document.getElementById('hintSecondary');
+  const $hintSecondaryLabel = document.getElementById('hintSecondaryLabel');
 
   let items = [];
   let sel = 0;
   let timer = null;
   let queryId = 0;
+  let previewTimer = null;
 
-  const ICONS = { app: '▶', folder: '📁', file: '📄' };
+  const ICONS = { app: '▶', folder: '📁', file: '📄', calc: '🧮', convert: '🔁', websearch: '🌐', clip: '📋', snippet: '✂️' };
+  const ACTION_LABELS = { open: 'Open', reveal: 'Show in Explorer', copy: 'Copy', paste: 'Paste', 'open-external': 'Open in browser' };
+  const TEXT_PREVIEW_EXTS = new Set(['.txt', '.md', '.json', '.log', '.csv', '.js', '.ts', '.py', '.yml', '.yaml', '.xml', '.ini', '.cfg', '.conf']);
+  const IMAGE_PREVIEW_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
 
   function fmtCount(n) {
     return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'K' : String(n);
@@ -111,11 +132,19 @@
 
   window.lumos.onStatus((s) => {
     $status.textContent = s.status === 'ready'
-      ? fmtCount(s.indexed) + ' items'
-      : 'indexing… ' + fmtCount(s.scanned || s.indexed);
+      ? fmtCount(s.indexed) + ' items ⚙'
+      : 'indexing… ' + fmtCount(s.scanned || s.indexed) + ' ⚙';
   });
 
+  $status.addEventListener('click', () => window.lumos.openSettings());
+
   window.lumos.onShown(() => { $q.focus(); $q.select(); });
+
+  function extOf(p) {
+    const dot = p.lastIndexOf('.');
+    const slash = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'));
+    return dot > slash ? p.slice(dot).toLowerCase() : '';
+  }
 
   function render() {
     $results.innerHTML = '';
@@ -125,43 +154,107 @@
       row.dataset.i = i;
 
       const icon = document.createElement('div');
-      icon.className = 'icon ' + it.kind;
-      icon.textContent = ICONS[it.kind];
+      icon.className = 'icon ' + it.type;
+      icon.textContent = ICONS[it.type] || '❔';
 
       const meta = document.createElement('div');
       meta.className = 'meta';
       const name = document.createElement('div');
       name.className = 'name';
-      name.textContent = it.name;
+      name.textContent = it.title;
       const p = document.createElement('div');
       p.className = 'path';
-      p.textContent = it.path;
+      p.textContent = it.subtitle;
       meta.append(name, p);
 
       const kind = document.createElement('div');
       kind.className = 'kind';
-      kind.textContent = it.kind;
+      kind.textContent = it.type;
 
       row.append(icon, meta, kind);
-      row.addEventListener('click', (e) => activate(i, e.ctrlKey));
+      row.addEventListener('click', (e) => activate(i, e.ctrlKey ? preferAction(it, 'reveal') : undefined));
       row.addEventListener('mousemove', () => { if (sel !== i) { sel = i; markSel(); } });
       $results.appendChild(row);
+
+      // Real icon fetched lazily, after the placeholder already painted.
+      if (it.type === 'file' || it.type === 'folder' || it.type === 'app') {
+        const myQuery = queryId;
+        window.lumos.getIcon(it.data.path, it.type).then((dataUrl) => {
+          if (myQuery !== queryId || !dataUrl) return;
+          const cur = $results.children[i];
+          if (!cur) return;
+          const img = document.createElement('img');
+          img.src = dataUrl;
+          const iconEl = cur.querySelector('.icon');
+          if (iconEl) { iconEl.textContent = ''; iconEl.appendChild(img); }
+        }).catch(() => {});
+      }
     });
     $results.classList.toggle('has', items.length > 0);
     $hints.classList.toggle('has', items.length > 0);
+    updateHints();
+    updatePreview();
+  }
+
+  function preferAction(it, action) {
+    return it.actions && it.actions.includes(action) ? action : undefined;
+  }
+
+  function updateHints() {
+    const it = items[sel];
+    if (!it) return;
+    const primary = it.actions[0];
+    $hintPrimary.textContent = ACTION_LABELS[primary] || 'Open';
+    const secondary = it.actions.find((a) => a !== primary);
+    if (secondary) {
+      $hintSecondary.style.display = '';
+      $hintSecondaryLabel.textContent = ACTION_LABELS[secondary] || secondary;
+    } else {
+      $hintSecondary.style.display = 'none';
+    }
+  }
+
+  function updatePreview() {
+    clearTimeout(previewTimer);
+    const it = items[sel];
+    if (!it || it.type !== 'file') { $preview.classList.remove('has'); $preview.innerHTML = ''; return; }
+    const ext = extOf(it.data.path);
+    if (!TEXT_PREVIEW_EXTS.has(ext) && !IMAGE_PREVIEW_EXTS.has(ext)) {
+      $preview.classList.remove('has'); $preview.innerHTML = '';
+      return;
+    }
+    previewTimer = setTimeout(async () => {
+      const myQuery = queryId, mySel = sel;
+      if (IMAGE_PREVIEW_EXTS.has(ext)) {
+        if (myQuery !== queryId || mySel !== sel) return;
+        $preview.innerHTML = '';
+        const img = document.createElement('img');
+        img.src = 'file:///' + it.data.path.replace(/\\/g, '/');
+        $preview.appendChild(img);
+        $preview.classList.add('has');
+        return;
+      }
+      const text = await window.lumos.previewFile(it.data.path);
+      if (myQuery !== queryId || mySel !== sel) return;
+      if (text == null) { $preview.classList.remove('has'); $preview.innerHTML = ''; return; }
+      $preview.textContent = text;
+      $preview.classList.add('has');
+    }, 150);
   }
 
   function markSel() {
     $results.querySelectorAll('.row').forEach((r, i) => r.classList.toggle('sel', i === sel));
     const el = $results.children[sel];
     if (el) el.scrollIntoView({ block: 'nearest' });
+    updateHints();
+    updatePreview();
   }
 
-  function activate(i, revealOnly) {
+  function activate(i, actionOverride) {
     const it = items[i];
     if (!it) return;
-    if (revealOnly) window.lumos.reveal(it.path);
-    else window.lumos.open(it.path);
+    const action = actionOverride || it.actions[0];
+    window.lumos.runAction(action, it);
   }
 
   async function doSearch() {
@@ -172,9 +265,9 @@
     if (my !== queryId) return; // stale response
     items = res.results;
     sel = 0;
-    $status.textContent = res.status === 'ready'
+    $status.textContent = (res.status === 'ready'
       ? fmtCount(res.indexed) + ' items'
-      : 'indexing… ' + fmtCount(res.indexed);
+      : 'indexing… ' + fmtCount(res.indexed)) + ' ⚙';
     render();
   }
 
@@ -187,7 +280,10 @@
     if (e.key === 'Escape') { window.lumos.hide(); return; }
     if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) { sel = (sel + 1) % items.length; markSel(); } }
     else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length) { sel = (sel - 1 + items.length) % items.length; markSel(); } }
-    else if (e.key === 'Enter') { e.preventDefault(); activate(sel, e.ctrlKey); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      activate(sel, e.ctrlKey ? preferAction(items[sel], 'reveal') : undefined);
+    }
   });
 </script>
 </body>

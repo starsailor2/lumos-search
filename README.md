@@ -10,11 +10,15 @@ It contains no code paths that rename, move, delete, or modify your files.
 
 ## Features
 
-- **Global hotkey**: `Alt+,` or `Alt+X` from anywhere (falls back to `Ctrl+,` / `Ctrl+X` if taken).
-- **Full-drive index**: crawls every drive letter (C:\, D:\, …) in a background worker thread.
+- **Global hotkey**: configurable (default `Alt+,` / `Alt+X`, falls back to `Ctrl+,` / `Ctrl+X` if taken).
+- **Full-drive index**: crawls every drive letter (C:\, D:\, …), or just the folders you choose, in a background worker thread.
 - **App search**: Start Menu and Desktop shortcuts are indexed and ranked first, like Spotlight.
-- **Smart ranking**: exact > prefix > word-boundary > substring > fuzzy matches; shallower paths rank higher.
-- **Keyboard-first**: `↑↓` navigate · `Enter` open · `Ctrl+Enter` reveal in File Explorer · `Esc` close.
+- **Quick actions**: type a calculation (`12*4+1`) or a conversion (`10 km to mi`) for an instant answer, or fall back to a web search.
+- **Clipboard history & snippets**: recent text you've copied and your own saved snippets show up right alongside file results.
+- **Smart ranking**: exact > prefix > word-boundary > substring > fuzzy matches, boosted by how often and recently you actually open each result ("frecency").
+- **Real file/app icons**, loaded lazily so typing never slows down; a preview pane for small text files and images.
+- **Keyboard-first**: `↑↓` navigate · `Enter` runs the primary action (open/paste/copy) · `Ctrl+Enter` reveals in File Explorer when available · `Esc` close.
+- **Settings window**: change the hotkey, indexed folders, quick actions, clipboard behavior, and snippets without editing any files.
 - **Instant startup**: index is cached in the app's own data folder, then refreshed in the background.
 - **Auto-start**: the installed app launches with Windows and lives in the system tray.
 - **Path search**: type a `\` or `/` in your query to also match against full paths.
@@ -80,8 +84,11 @@ while it runs; the item counter in the search bar shows progress.
 | Show selected item in File Explorer | `Ctrl+Enter` |
 | Close the search bar | `Esc` |
 | Search inside full paths | include `\` in the query, e.g. `users\srish` |
+| Calculate | type a math expression, e.g. `12*4+1` |
+| Convert units | `10 km to mi`, `100 f to c` |
+| Open Settings | click the item counter (bottom right of the search bar), or tray → Settings… |
 
-**Tray menu** (right-click the tray dot): show search, rebuild index, quit.
+**Tray menu** (right-click the tray icon): show search, open Settings, toggle clipboard history, rebuild index, quit.
 
 ---
 
@@ -106,42 +113,55 @@ enable *Settings → System → For developers → Developer Mode*, delete
 
 **Alt+, / Alt+X doesn't open the bar**
 Another app owns the hotkey; Lumos automatically falls back to `Ctrl+,` / `Ctrl+X`.
-To change it permanently, edit `HOTKEYS` in `src/main.js` and rebuild.
+Open **Settings** (tray → Settings…) and rebind it to whatever combination you like — no rebuild needed.
 
 **A new file doesn't show up in results**
-The index is a snapshot. Rebuild it: tray icon → **Rebuild index** (or restart the app).
+The index is a snapshot. Rebuild it: tray icon → **Rebuild index**, or Settings → **Rebuild index now**.
 
 **Search feels slow or memory is high**
 Memory scales with file count (2–4M entries ≈ a few hundred MB). Add noisy
-folders to `SKIP_DIRS` in `src/indexer.js` and rebuild the index.
+folders to the excluded-folders list in **Settings**, or restrict indexing to
+specific folders there instead of the whole drive.
+
+**I don't want my clipboard history captured**
+Turn it off from the tray menu (one click) or in Settings → Clipboard history.
+It's on by default but never leaves your machine, captures text only, and
+you can also disable disk retention so it never touches disk at all.
 
 **Uninstall**
 Settings → Apps → Installed apps → Lumos Search → Uninstall.
-This also removes the index cache (`%APPDATA%\lumos-search`).
+This also removes all of the app's local data (`%APPDATA%\Lumos Search`), including
+the index cache, your configuration, and clipboard history if it was retained.
 
 ---
 
 ## Read-only guarantees
 
-- Renderer is sandboxed: `sandbox: true`, `contextIsolation: true`, no `nodeIntegration`.
-- The preload exposes exactly four capabilities: `search`, `open`, `reveal`, `hide`.
-- The only OS actions taken on your data are `shell.openPath` (open files or
-  shortcut targets with the default handler) and `shell.showItemInFolder`
-  (navigate in File Explorer).
+- Renderer is sandboxed: `sandbox: true`, `contextIsolation: true`, no `nodeIntegration` — true of both the search window and the Settings window.
+- The main search window's preload never exposes config-write capabilities;
+  only the separate Settings window's preload can change configuration.
+- The only OS actions taken on your **files** are `shell.openPath` (open files
+  or shortcut targets with the default handler) and `shell.showItemInFolder`
+  (navigate in File Explorer). No `fs.write`/rename/delete ever touches a
+  file or folder that isn't already the app's own data below.
 - The indexer uses only directory reads (`fs.readdirSync`); symlinks are skipped.
-- The only file the app ever writes is its own index cache in `%APPDATA%\lumos-search\`.
+- The app's own local data — index cache, configuration, usage stats used for
+  ranking, optional clipboard history, and the icon cache — lives entirely in
+  `%APPDATA%\Lumos Search\`, never inside your files. Clipboard history is
+  text-only, capped in size, and can be disabled (or excluded from disk
+  entirely) from Settings or the tray menu at any time.
+- Config/usage-stat writes are atomic (write to a temp file, then rename) so
+  an interrupted write can't leave a corrupted file behind.
 
 ---
 
 ## Configuration
 
-| Setting | File | Default |
-|---|---|---|
-| Hotkey | `src/main.js` → `HOTKEYS` | `Alt+,`, `Alt+X` |
-| Max results shown | `src/main.js` → `MAX_RESULTS` | 40 |
-| Skipped folders | `src/indexer.js` → `SKIP_DIRS` | recycle bin, WinSxS, node_modules, .git, … |
-
-After changing anything: `npm run dist` and reinstall (or just `npm start` to test).
+Everything is now configurable from the in-app **Settings window**
+(tray → Settings…, or click the item counter in the search bar): hotkey,
+indexed folders, excluded folders, max results, quick-action toggles and
+search engine, clipboard behavior, and snippets. Nothing requires editing
+source or rebuilding anymore.
 
 ---
 
@@ -151,9 +171,20 @@ After changing anything: `npm run dist` and reinstall (or just `npm start` to te
 lumos-search/
 ├── package.json          # app metadata + electron-builder config
 └── src/
-    ├── main.js           # main process: window, tray, hotkey, search, IPC
+    ├── main.js           # main process: window, tray, hotkey, search orchestration, IPC
+    ├── config.js         # persisted settings (config.json), atomic writes
+    ├── frecency.js       # usage-based ranking boost (frecency.json)
+    ├── icons.js          # lazy, cached real file/app icon resolution
     ├── indexer.js        # worker thread: crawls drives + Start Menu (read-only)
-    ├── preload.js        # exposes search/open/reveal/hide to the UI
+    ├── preload.js        # read/launch-only capabilities for the search window
+    ├── preload-settings.js # config read/write capabilities, Settings window only
+    ├── settings-window.js  # creates/reuses the Settings BrowserWindow
+    ├── providers/
+    │   ├── index.js      # ordered list of search providers
+    │   ├── files.js       # file/folder/app index scoring
+    │   ├── quickactions.js # calculator, unit conversion, web search
+    │   └── clipboard.js   # clipboard history + snippets
     └── renderer/
-        └── index.html    # the Spotlight-style search UI
+        ├── index.html    # the Spotlight-style search UI
+        └── settings.html # the Settings UI
 ```

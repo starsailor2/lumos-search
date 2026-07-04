@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+<title>Lumos Search — Settings</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #1c1c20; color: #f0f0f3; font-family: 'Segoe UI', system-ui, sans-serif; }
+  body { padding: 20px 24px 40px; }
+  h1 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+  p.hint { color: rgba(255,255,255,0.45); font-size: 12px; margin-bottom: 20px; }
+  section { margin-bottom: 26px; padding-bottom: 22px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  section:last-child { border-bottom: none; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: rgba(255,255,255,0.55); margin-bottom: 12px; }
+  label.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; font-size: 13.5px; }
+  label.row span.desc { color: rgba(255,255,255,0.4); font-size: 11.5px; display: block; margin-top: 2px; }
+  input[type=text], input[type=number], input[type=url] {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 6px; color: #f0f0f3; padding: 6px 9px; font-size: 13px; outline: none;
+  }
+  input[type=text]:focus, input[type=number]:focus, input[type=url]:focus { border-color: #4ea1ff; }
+  input[type=checkbox] { width: 16px; height: 16px; accent-color: #4ea1ff; }
+  button {
+    background: rgba(78,161,255,0.16); border: 1px solid rgba(78,161,255,0.35); color: #cfe4ff;
+    border-radius: 6px; padding: 6px 12px; font-size: 12.5px; cursor: pointer;
+  }
+  button:hover { background: rgba(78,161,255,0.28); }
+  button.danger { background: rgba(255,90,90,0.12); border-color: rgba(255,90,90,0.35); color: #ffb3b3; }
+  button.danger:hover { background: rgba(255,90,90,0.22); }
+  .list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+  .list-item { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    background: rgba(255,255,255,0.04); border-radius: 6px; padding: 6px 10px; font-size: 12.5px; }
+  .list-item button { padding: 3px 8px; font-size: 11px; }
+  .hotkey-input {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 6px; color: #f0f0f3; padding: 6px 9px; font-size: 13px; min-width: 140px; text-align: center; cursor: text;
+  }
+  .hotkey-input.recording { border-color: #4ea1ff; color: #4ea1ff; }
+  .snippet-row { display: grid; grid-template-columns: 100px 1fr auto; gap: 8px; align-items: start; margin-bottom: 8px; }
+  .snippet-row textarea {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px;
+    color: #f0f0f3; padding: 6px 9px; font-size: 12.5px; resize: vertical; min-height: 32px; font-family: inherit;
+  }
+  #toast { position: fixed; bottom: 16px; right: 16px; background: rgba(78,161,255,0.9); color: #fff;
+    padding: 8px 14px; border-radius: 6px; font-size: 12.5px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<h1>Lumos Search Settings</h1>
+<p class="hint">Changes save automatically and most take effect immediately — no restart needed.</p>
+
+<section>
+  <h2>Hotkeys</h2>
+  <label class="row">
+    Primary hotkey
+    <span class="hotkey-input" id="hk0" tabindex="0">Alt+,</span>
+  </label>
+  <label class="row">
+    Secondary hotkey
+    <span class="hotkey-input" id="hk1" tabindex="0">Alt+X</span>
+  </label>
+  <p class="hint">Click a hotkey box, then press the key combination you want. Esc cancels.</p>
+</section>
+
+<section>
+  <h2>Indexing</h2>
+  <label class="row">
+    <span>Max results shown<span class="desc">How many results appear per search</span></span>
+    <input type="number" id="maxResults" min="5" max="200" style="width:70px">
+  </label>
+  <div class="list" id="rootsList"></div>
+  <button id="addRoot">+ Add folder to index</button>
+  <button id="useAllDrives" style="margin-left:8px">Use all drives (default)</button>
+  <p class="hint" style="margin-top:10px">Excluded folder names (skipped everywhere, e.g. "node_modules")</p>
+  <div class="list" id="excludeList"></div>
+  <div style="display:flex; gap:8px;">
+    <input type="text" id="newExclude" placeholder="folder name">
+    <button id="addExclude">Add</button>
+  </div>
+  <div style="margin-top:14px">
+    <button id="rebuildIndex">Rebuild index now</button>
+  </div>
+</section>
+
+<section>
+  <h2>Quick actions</h2>
+  <label class="row"><span>Calculator</span><input type="checkbox" id="qaCalc"></label>
+  <label class="row"><span>Unit conversion</span><input type="checkbox" id="qaConvert"></label>
+  <label class="row"><span>Web search fallback</span><input type="checkbox" id="qaWeb"></label>
+  <label class="row">
+    <span>Search engine URL<span class="desc">Use %s where the query goes</span></span>
+    <input type="url" id="qaWebEngine" style="width:280px">
+  </label>
+</section>
+
+<section>
+  <h2>Clipboard history</h2>
+  <label class="row"><span>Enable clipboard history<span class="desc">Text only; disable any time</span></span><input type="checkbox" id="clipEnabled"></label>
+  <label class="row"><span>Keep across restarts<span class="desc">If off, history is never written to disk</span></span><input type="checkbox" id="clipRetain"></label>
+  <label class="row"><span>Max entries</span><input type="number" id="clipMax" min="1" max="500" style="width:70px"></label>
+</section>
+
+<section>
+  <h2>Snippets</h2>
+  <div id="snippetsList"></div>
+  <button id="addSnippet">+ Add snippet</button>
+</section>
+
+<section>
+  <h2>Usage data</h2>
+  <button class="danger" id="clearFrecency">Clear usage history (ranking resets)</button>
+</section>
+
+<div id="toast"></div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let cfg = null;
+
+  function toast(msg) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 1400);
+  }
+
+  async function save(patch) {
+    cfg = await window.lumosSettings.updateConfig(patch);
+    toast('Saved');
+  }
+
+  function renderRoots() {
+    const list = $('rootsList');
+    list.innerHTML = '';
+    const roots = cfg.indexedRoots;
+    if (!roots) {
+      const div = document.createElement('div');
+      div.className = 'hint';
+      div.textContent = 'Currently indexing: all drives (default)';
+      list.appendChild(div);
+      return;
+    }
+    roots.forEach((r, i) => {
+      const row = document.createElement('div');
+      row.className = 'list-item';
+      const span = document.createElement('span');
+      span.textContent = r;
+      const btn = document.createElement('button');
+      btn.textContent = 'Remove';
+      btn.onclick = () => {
+        const next = roots.slice();
+        next.splice(i, 1);
+        save({ indexedRoots: next.length ? next : null });
+      };
+      row.append(span, btn);
+      list.appendChild(row);
+    });
+  }
+
+  function renderExcludes() {
+    const list = $('excludeList');
+    list.innerHTML = '';
+    cfg.excludedDirs.forEach((d, i) => {
+      const row = document.createElement('div');
+      row.className = 'list-item';
+      const span = document.createElement('span');
+      span.textContent = d;
+      const btn = document.createElement('button');
+      btn.textContent = 'Remove';
+      btn.onclick = () => {
+        const next = cfg.excludedDirs.slice();
+        next.splice(i, 1);
+        save({ excludedDirs: next });
+      };
+      row.append(span, btn);
+      list.appendChild(row);
+    });
+  }
+
+  function renderSnippets() {
+    const list = $('snippetsList');
+    list.innerHTML = '';
+    cfg.snippets.forEach((snip, i) => {
+      const row = document.createElement('div');
+      row.className = 'snippet-row';
+      const trigger = document.createElement('input');
+      trigger.type = 'text';
+      trigger.value = snip.trigger;
+      trigger.placeholder = 'trigger';
+      const body = document.createElement('textarea');
+      body.value = snip.body;
+      body.placeholder = 'snippet text';
+      const del = document.createElement('button');
+      del.textContent = 'Delete';
+      del.className = 'danger';
+
+      const commit = () => {
+        const next = cfg.snippets.slice();
+        next[i] = { ...snip, trigger: trigger.value, body: body.value };
+        save({ snippets: next });
+      };
+      trigger.addEventListener('change', commit);
+      body.addEventListener('change', commit);
+      del.onclick = () => {
+        const next = cfg.snippets.slice();
+        next.splice(i, 1);
+        save({ snippets: next });
+      };
+
+      row.append(trigger, body, del);
+      list.appendChild(row);
+    });
+  }
+
+  function renderAll() {
+    $('maxResults').value = cfg.maxResults;
+    $('qaCalc').checked = cfg.quickActions.calculator;
+    $('qaConvert').checked = cfg.quickActions.unitConvert;
+    $('qaWeb').checked = cfg.quickActions.webSearch;
+    $('qaWebEngine').value = cfg.quickActions.webSearchEngine;
+    $('clipEnabled').checked = cfg.clipboard.enabled;
+    $('clipRetain').checked = cfg.clipboard.retainAcrossRestarts;
+    $('clipMax').value = cfg.clipboard.maxEntries;
+    $('hk0').textContent = cfg.hotkeys[0] || '(unset)';
+    $('hk1').textContent = cfg.hotkeys[1] || '(unset)';
+    renderRoots();
+    renderExcludes();
+    renderSnippets();
+  }
+
+  $('maxResults').addEventListener('change', (e) => save({ maxResults: Number(e.target.value) }));
+  $('qaCalc').addEventListener('change', (e) => save({ quickActions: { calculator: e.target.checked } }));
+  $('qaConvert').addEventListener('change', (e) => save({ quickActions: { unitConvert: e.target.checked } }));
+  $('qaWeb').addEventListener('change', (e) => save({ quickActions: { webSearch: e.target.checked } }));
+  $('qaWebEngine').addEventListener('change', (e) => save({ quickActions: { webSearchEngine: e.target.value } }));
+  $('clipEnabled').addEventListener('change', (e) => save({ clipboard: { enabled: e.target.checked } }));
+  $('clipRetain').addEventListener('change', (e) => save({ clipboard: { retainAcrossRestarts: e.target.checked } }));
+  $('clipMax').addEventListener('change', (e) => save({ clipboard: { maxEntries: Number(e.target.value) } }));
+
+  $('addRoot').addEventListener('click', async () => {
+    const dir = await window.lumosSettings.pickFolder();
+    if (!dir) return;
+    const next = (cfg.indexedRoots || []).concat(dir);
+    save({ indexedRoots: next });
+  });
+  $('useAllDrives').addEventListener('click', () => save({ indexedRoots: null }));
+  $('addExclude').addEventListener('click', () => {
+    const v = $('newExclude').value.trim();
+    if (!v) return;
+    save({ excludedDirs: cfg.excludedDirs.concat(v) });
+    $('newExclude').value = '';
+  });
+  $('addSnippet').addEventListener('click', () => {
+    save({ snippets: cfg.snippets.concat({ trigger: '', body: '' }) });
+  });
+  $('rebuildIndex').addEventListener('click', () => {
+    window.lumosSettings.rebuildIndex();
+    toast('Rebuilding index…');
+  });
+  $('clearFrecency').addEventListener('click', () => {
+    window.lumosSettings.resetFrecency();
+    toast('Usage history cleared');
+  });
+
+  // Hotkey recording
+  function bindHotkeyBox(el, index) {
+    let recording = false;
+    el.addEventListener('click', () => {
+      recording = true;
+      el.classList.add('recording');
+      el.textContent = 'Press keys…';
+    });
+    el.addEventListener('keydown', (e) => {
+      if (!recording) return;
+      e.preventDefault();
+      if (e.key === 'Escape') {
+        recording = false;
+        el.classList.remove('recording');
+        el.textContent = cfg.hotkeys[index] || '(unset)';
+        return;
+      }
+      const parts = [];
+      if (e.ctrlKey) parts.push('Ctrl');
+      if (e.altKey) parts.push('Alt');
+      if (e.shiftKey) parts.push('Shift');
+      if (e.metaKey) parts.push('Super');
+      const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+      if (!['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
+        parts.push(key === ',' ? ',' : key);
+        const accel = parts.join('+');
+        const next = cfg.hotkeys.slice();
+        next[index] = accel;
+        recording = false;
+        el.classList.remove('recording');
+        el.textContent = accel;
+        save({ hotkeys: next });
+      }
+    });
+  }
+  bindHotkeyBox($('hk0'), 0);
+  bindHotkeyBox($('hk1'), 1);
+
+  (async () => {
+    cfg = await window.lumosSettings.getConfig();
+    renderAll();
+  })();
+</script>
+</body>
+</html>

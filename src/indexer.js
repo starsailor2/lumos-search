@@ -3,12 +3,26 @@
 // and Desktop. STRICTLY read-only:
 // uses only fs.readdir / fs.existsSync — never writes, renames, or deletes.
 
-const { parentPort } = require('worker_threads');
+const { parentPort, workerData } = require('worker_threads');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
 const BATCH_SIZE = 4000;
+
+// User-configured extra folders to skip (from Settings), on top of the
+// built-in list below. Passed in via workerData, always an array of strings.
+const EXTRA_SKIP_DIRS = new Set(
+  (workerData && Array.isArray(workerData.excludedDirs) ? workerData.excludedDirs : [])
+    .filter((d) => typeof d === 'string')
+    .map((d) => d.toLowerCase())
+);
+
+// User-configured roots to crawl instead of every drive letter (from
+// Settings). null/absent means "auto" — the default listDrives() behavior.
+const CUSTOM_ROOTS = (workerData && Array.isArray(workerData.roots) && workerData.roots.length)
+  ? workerData.roots.filter((r) => typeof r === 'string')
+  : null;
 
 // Junk/system dirs skipped by basename (huge, noisy, or protected).
 // Edit this list to taste.
@@ -91,7 +105,8 @@ async function walk(root, { appsOnly = false } = {}) {
 
       if (ent.isSymbolicLink()) continue; // avoid loops
       if (ent.isDirectory()) {
-        if (SKIP_DIRS.has(name.toLowerCase())) continue;
+        const lower = name.toLowerCase();
+        if (SKIP_DIRS.has(lower) || EXTRA_SKIP_DIRS.has(lower)) continue;
         if (!appsOnly) emit(full, 1);
         stack.push(full);
       } else if (ent.isFile()) {
@@ -117,8 +132,8 @@ async function walk(root, { appsOnly = false } = {}) {
     for (const d of shortcutDirs()) await walk(d, { appsOnly: true });
     flush();
 
-    // 2) Every drive
-    for (const drive of listDrives()) await walk(drive);
+    // 2) Every drive, or the user's custom root list if configured
+    for (const drive of (CUSTOM_ROOTS || listDrives())) await walk(drive);
     flush();
 
     parentPort.postMessage({ type: 'done', total });
