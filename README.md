@@ -1,7 +1,7 @@
 # Lumos Search 🔍
 
 A Spotlight-style global search for Windows, built with Electron.
-Press **Alt+Space** anywhere and search every app, file, and folder on all your drives.
+Press **Alt+,** (or **Alt+X**) anywhere and search every app, file, and folder on all your drives.
 
 **Read-only by design** — the app can only *find*, *open*, and *navigate to* items.
 It contains no code paths that rename, move, delete, or modify your files.
@@ -10,7 +10,7 @@ It contains no code paths that rename, move, delete, or modify your files.
 
 ## Features
 
-- **Global hotkey**: `Alt+Space` from anywhere (falls back to `Ctrl+Space` if taken).
+- **Global hotkey**: `Alt+,` or `Alt+X` from anywhere (falls back to `Ctrl+,` / `Ctrl+X` if taken).
 - **Full-drive index**: crawls every drive letter (C:\, D:\, …) in a background worker thread.
 - **App search**: Start Menu and Desktop shortcuts are indexed and ranked first, like Spotlight.
 - **Smart ranking**: exact > prefix > word-boundary > substring > fuzzy matches; shallower paths rank higher.
@@ -63,7 +63,7 @@ Double-click `Lumos Search Setup 1.0.0.exe`. It is a one-click installer that:
 ### Step 4 — Done
 
 The app now **starts automatically with Windows** and waits in the system tray.
-You never need to open this folder again. Press **Alt+Space** anytime.
+You never need to open this folder again. Press **Alt+,** or **Alt+X** anytime.
 
 First launch spends a few minutes indexing all drives — you can already search
 while it runs; the item counter in the search bar shows progress.
@@ -74,7 +74,7 @@ while it runs; the item counter in the search bar shows progress.
 
 | Action | Key |
 |---|---|
-| Open / close search bar | `Alt+Space` |
+| Open / close search bar | `Alt+,` or `Alt+X` |
 | Move through results | `↑` / `↓` |
 | Open selected file or app | `Enter` |
 | Show selected item in File Explorer | `Ctrl+Enter` |
@@ -104,9 +104,9 @@ code-signing toolkit. If you ever want executable metadata/icons embedded,
 enable *Settings → System → For developers → Developer Mode*, delete
 `C:\Users\<you>\AppData\Local\electron-builder\Cache\winCodeSign`, and rebuild.
 
-**Alt+Space doesn't open the bar**
-Another app owns the hotkey; Lumos automatically falls back to `Ctrl+Space`.
-To change it permanently, edit `HOTKEY` in `src/main.js` and rebuild.
+**Alt+, / Alt+X doesn't open the bar**
+Another app owns the hotkey; Lumos automatically falls back to `Ctrl+,` / `Ctrl+X`.
+To change it permanently, edit `HOTKEYS` in `src/main.js` and rebuild.
 
 **A new file doesn't show up in results**
 The index is a snapshot. Rebuild it: tray icon → **Rebuild index** (or restart the app).
@@ -137,7 +137,7 @@ This also removes the index cache (`%APPDATA%\lumos-search`).
 
 | Setting | File | Default |
 |---|---|---|
-| Hotkey | `src/main.js` → `HOTKEY` | `Alt+Space` |
+| Hotkey | `src/main.js` → `HOTKEYS` | `Alt+,`, `Alt+X` |
 | Max results shown | `src/main.js` → `MAX_RESULTS` | 40 |
 | Skipped folders | `src/indexer.js` → `SKIP_DIRS` | recycle bin, WinSxS, node_modules, .git, … |
 
