@@ -29,7 +29,7 @@ function scoreEntry(idx, i, q, pathMode, frecencyBoost) {
   if (s < 0) return -1;
   const f = idx.flags[i];
   if (f === 2) s += 320;               // apps first, Spotlight-style
-  else if (f === 1) s += 40;           // folders slightly above files
+  else if (f === 0) s += 150;          // files ranked above folders for equivalent matches
   // shallower paths are usually more relevant
   const depth = (idx.paths[i].match(/[\\/]/g) || []).length;
   s -= Math.min(depth * 4, 60);
