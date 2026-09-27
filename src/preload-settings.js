@@ -10,4 +10,5 @@ contextBridge.exposeInMainWorld('lumosSettings', {
   pickFolder: () => ipcRenderer.invoke('pick-folder'),
   resetFrecency: () => ipcRenderer.send('reset-frecency'),
   rebuildIndex: () => ipcRenderer.send('rebuild-index'),
+  clearClipboard: () => ipcRenderer.send('clear-clipboard'),
 });

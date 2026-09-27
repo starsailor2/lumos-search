@@ -49,11 +49,46 @@ function pollClipboard(getConfig) {
   const cfg = getConfig().clipboard;
   if (!cfg.enabled) return;
   let text;
-  try { text = clipboard.readText(); } catch { return; }
-  if (!text || text === lastSeen) return;
-  lastSeen = text;
-  const truncated = text.length > cfg.maxTextChars ? text.slice(0, cfg.maxTextChars) : text;
-  history.unshift({ id: 'clip:' + Date.now() + ':' + Math.random().toString(36).slice(2), text: truncated, ts: Date.now() });
+  try { text = clipboard.readText(); } catch { /* ignore */ }
+  if (text && text !== lastSeen) {
+    lastSeen = text;
+    if (looksLikePassword(text)) return;
+    addEntry(text, 'text', cfg);
+    return;
+  }
+  try {
+    const img = clipboard.readImage();
+    if (img && !img.isEmpty()) {
+      const dataUrl = img.toDataURL();
+      const imgKey = 'img:' + dataUrl.slice(0, 64);
+      if (imgKey !== lastSeen) {
+        lastSeen = imgKey;
+        addEntry(dataUrl, 'image', cfg);
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+function looksLikePassword(text) {
+  if (text.length < 8 || text.length > 128) return false;
+  if (/\s/.test(text)) return false;
+  const hasUpper = /[A-Z]/.test(text);
+  const hasLower = /[a-z]/.test(text);
+  const hasDigit = /\d/.test(text);
+  const hasSpecial = /[^A-Za-z0-9]/.test(text);
+  return [hasUpper, hasLower, hasDigit, hasSpecial].filter(Boolean).length >= 3;
+}
+
+function addEntry(content, kind, cfg) {
+  const truncated = kind === 'text' && content.length > cfg.maxTextChars
+    ? content.slice(0, cfg.maxTextChars) : content;
+  history.unshift({
+    id: 'clip:' + Date.now() + ':' + Math.random().toString(36).slice(2),
+    text: kind === 'text' ? truncated : '[Image]',
+    image: kind === 'image' ? truncated : undefined,
+    kind,
+    ts: Date.now(),
+  });
   if (history.length > cfg.maxEntries) history.length = cfg.maxEntries;
   if (cfg.retainAcrossRestarts) saveHistoryDebounced();
 }
@@ -88,35 +123,35 @@ function relativeTime(ts) {
 function search(ctx) {
   const { q, qLower, config } = ctx;
   const results = [];
+  const isBrowse = !q || q.length < 1;
+  const isClipScope = ctx.scope === 'clip' || ctx.scope === 'clipboard';
 
-  if (config.clipboard.enabled) {
+  if (config.clipboard.enabled && (isBrowse || isClipScope || q)) {
     for (let i = 0; i < history.length; i++) {
       const entry = history[i];
       const textLower = entry.text.toLowerCase();
       let score = -1;
-      if (!q) {
-        // Empty query never reaches providers (search() gates on q.length>=1
-        // upstream) — kept defensive in case that changes.
+      if (isBrowse || isClipScope) {
         score = 200 - i * 2;
       } else if (textLower.includes(qLower)) {
-        score = 250 + Math.max(0, 30 - i); // recent entries rank slightly higher, capped below file fuzzy tier
+        score = 250 + Math.max(0, 30 - i);
       }
       if (score < 0) continue;
       results.push({
         type: 'clip',
         id: entry.id,
-        title: firstLine(entry.text) || '(empty)',
+        title: entry.kind === 'image' ? '[Image]' : (firstLine(entry.text) || '(empty)'),
         subtitle: 'Clipboard · ' + relativeTime(entry.ts),
         score,
-        icon: null,
-        actions: ['paste', 'copy'],
-        data: { text: entry.text },
+        icon: entry.kind === 'image' ? '🖼️' : null,
+        actions: entry.kind === 'image' ? ['copy'] : ['paste', 'copy'],
+        data: { text: entry.text, image: entry.image },
       });
     }
   }
 
   for (const snip of config.snippets) {
-    if (!q) continue;
+    if (isBrowse) continue;
     if (snip.trigger.toLowerCase().startsWith(qLower) || qLower.startsWith(snip.trigger.toLowerCase())) {
       results.push({
         type: 'snippet',
@@ -134,4 +169,15 @@ function search(ctx) {
   return results;
 }
 
-module.exports = { search, startClipboardWatch, applyRetentionChange, clearPersistedHistory };
+function getHistory() {
+  return history.slice();
+}
+
+function clearHistory(getConfig) {
+  history = [];
+  lastSeen = '';
+  const cfg = getConfig().clipboard;
+  if (cfg.retainAcrossRestarts) clearPersistedHistory();
+}
+
+module.exports = { search, startClipboardWatch, applyRetentionChange, clearPersistedHistory, getHistory, clearHistory };

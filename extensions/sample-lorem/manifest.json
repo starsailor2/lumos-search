@@ -1,0 +1,7 @@
+{
+  "name": "Lorem Ipsum",
+  "version": "1.0.0",
+  "description": "Generate placeholder Lorem Ipsum text",
+  "permissions": ["clipboard"],
+  "enabled": true
+}

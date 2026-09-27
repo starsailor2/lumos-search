@@ -15,6 +15,11 @@ const DEFAULT_CONFIG = {
   maxResults: 40,
   indexedRoots: null,   // null = auto (all drives + shortcut dirs)
   excludedDirs: [],     // extra basenames to skip, on top of built-in SKIP_DIRS
+  skipDirs: [],         // if non-empty, replaces the built-in SKIP_DIRS list
+  refresh: {
+    hotMinutes: 5,      // interval for re-scanning user folders (Desktop, Documents, etc.)
+    fullHours: 1,       // interval for full background re-crawl (idle gated)
+  },
   quickActions: {
     calculator: true,
     unitConvert: true,
@@ -28,6 +33,21 @@ const DEFAULT_CONFIG = {
     retainAcrossRestarts: true,
   },
   snippets: [], // { id, trigger, body }
+  favourites: [], // { path, title?, kind? }
+  quicklinks: [], // { id, keyword, title, url }
+  workflows: [], // { id, name, trigger?, steps: [{ action, data }] }
+  appearance: {
+    theme: 'system', // dark | light | system
+    accentColor: '#4ea1ff',
+    glassBlur: 40,
+    animations: true,
+  },
+  ai: {
+    enabled: false,
+    apiKey: '',
+    endpoint: 'https://api.openai.com/v1/chat/completions',
+    model: 'gpt-4o-mini',
+  },
 };
 
 function configPath() {
@@ -63,6 +83,15 @@ function sanitize(raw) {
   if (Array.isArray(raw.excludedDirs)) {
     cfg.excludedDirs = raw.excludedDirs.filter((d) => typeof d === 'string').slice(0, 256);
   }
+  if (Array.isArray(raw.skipDirs)) {
+    cfg.skipDirs = raw.skipDirs.filter((d) => typeof d === 'string').slice(0, 256);
+  }
+
+  const rf = raw.refresh;
+  if (rf && typeof rf === 'object') {
+    cfg.refresh.hotMinutes = clampNumber(rf.hotMinutes, 1, 60, DEFAULT_CONFIG.refresh.hotMinutes);
+    cfg.refresh.fullHours = clampNumber(rf.fullHours, 0.25, 24, DEFAULT_CONFIG.refresh.fullHours);
+  }
 
   const qa = raw.quickActions;
   if (qa && typeof qa === 'object') {
@@ -91,6 +120,61 @@ function sanitize(raw) {
         trigger: s.trigger.slice(0, 64),
         body: s.body.slice(0, 20000),
       }));
+  }
+
+  if (Array.isArray(raw.favourites)) {
+    cfg.favourites = raw.favourites
+      .filter((f) => f && typeof f.path === 'string')
+      .slice(0, 100)
+      .map((f) => ({
+        path: f.path,
+        title: typeof f.title === 'string' ? f.title.slice(0, 200) : undefined,
+        kind: typeof f.kind === 'string' ? f.kind : 'file',
+      }));
+  }
+
+  if (Array.isArray(raw.quicklinks)) {
+    cfg.quicklinks = raw.quicklinks
+      .filter((l) => l && typeof l.url === 'string')
+      .slice(0, 200)
+      .map((l) => ({
+        id: typeof l.id === 'string' ? l.id : String(Date.now()) + Math.random().toString(36).slice(2),
+        keyword: typeof l.keyword === 'string' ? l.keyword.slice(0, 32) : '',
+        title: typeof l.title === 'string' ? l.title.slice(0, 200) : '',
+        url: l.url.slice(0, 2000),
+      }));
+  }
+
+  if (Array.isArray(raw.workflows)) {
+    cfg.workflows = raw.workflows
+      .filter((w) => w && typeof w.name === 'string')
+      .slice(0, 50)
+      .map((w) => ({
+        id: typeof w.id === 'string' ? w.id : String(Date.now()) + Math.random().toString(36).slice(2),
+        name: w.name.slice(0, 100),
+        trigger: typeof w.trigger === 'string' ? w.trigger.slice(0, 32) : '',
+        steps: Array.isArray(w.steps) ? w.steps.slice(0, 20) : [],
+      }));
+  }
+
+  const app = raw.appearance;
+  if (app && typeof app === 'object') {
+    if (['dark', 'light', 'system'].includes(app.theme)) cfg.appearance.theme = app.theme;
+    if (typeof app.accentColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(app.accentColor)) {
+      cfg.appearance.accentColor = app.accentColor;
+    }
+    cfg.appearance.glassBlur = clampNumber(app.glassBlur, 0, 80, DEFAULT_CONFIG.appearance.glassBlur);
+    cfg.appearance.animations = app.animations !== false;
+  }
+
+  const ai = raw.ai;
+  if (ai && typeof ai === 'object') {
+    cfg.ai.enabled = ai.enabled === true;
+    if (typeof ai.apiKey === 'string') cfg.ai.apiKey = ai.apiKey.slice(0, 500);
+    if (typeof ai.endpoint === 'string' && /^https?:\/\//.test(ai.endpoint)) {
+      cfg.ai.endpoint = ai.endpoint.slice(0, 500);
+    }
+    if (typeof ai.model === 'string') cfg.ai.model = ai.model.slice(0, 100);
   }
 
   return cfg;
@@ -127,14 +211,17 @@ function saveConfig() {
 // object fields), sanitizes the result, persists it, and returns it.
 function updateConfig(patch) {
   const merged = { ...current, ...patch };
-  for (const key of ['quickActions', 'clipboard']) {
+  for (const key of ['quickActions', 'clipboard', 'appearance', 'ai']) {
     if (patch && patch[key] && typeof patch[key] === 'object') {
       merged[key] = { ...current[key], ...patch[key] };
     }
   }
+  if (patch && patch.favourites) merged.favourites = patch.favourites;
+  if (patch && patch.quicklinks) merged.quicklinks = patch.quicklinks;
+  if (patch && patch.workflows) merged.workflows = patch.workflows;
   current = sanitize(merged);
   saveConfig();
   return current;
 }
 
-module.exports = { loadConfig, getConfig, updateConfig, DEFAULT_CONFIG, configPath, writeAtomic };
+module.exports = { loadConfig, getConfig, updateConfig, DEFAULT_CONFIG, configPath, writeAtomic, sanitize };

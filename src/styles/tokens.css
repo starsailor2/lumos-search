@@ -1,0 +1,22 @@
+:root {
+  /* Dark solid background — no backdrop-filter conflict with Electron acrylic */
+  --bg: #0f0f13;
+  --bg-row: rgba(255, 255, 255, 0.04);
+  --bg-selected: rgba(110, 150, 255, 0.13);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-top: rgba(110, 150, 255, 0.22);
+
+  /* Accent */
+  --accent: #6e96ff;
+  --accent-2: #9f7aea;
+  --accent-soft: rgba(110, 150, 255, 0.15);
+
+  /* Text */
+  --text-primary: #e8e8f0;
+  --text-secondary: rgba(232, 232, 240, 0.55);
+  --text-muted: rgba(232, 232, 240, 0.30);
+
+  /* Radius / spacing */
+  --radius-row: 10px;
+  --radius-icon: 10px;
+}

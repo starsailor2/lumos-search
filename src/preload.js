@@ -1,7 +1,3 @@
-// Lumos Search — preload
-// The renderer gets exactly four capabilities: search, open, reveal, hide.
-// Nothing else from Node/Electron is exposed — no write access of any kind.
-
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('lumos', {
@@ -10,7 +6,11 @@ contextBridge.exposeInMainWorld('lumos', {
   hide: () => ipcRenderer.send('hide-window'),
   getIcon: (p, kind) => ipcRenderer.invoke('get-icon', { path: p, kind }),
   previewFile: (p) => ipcRenderer.invoke('preview-file', p),
+  getMeta: (p) => ipcRenderer.invoke('get-meta', p),
   openSettings: () => ipcRenderer.send('open-settings'),
+  getAppearance: () => ipcRenderer.invoke('get-appearance'),
   onStatus: (cb) => ipcRenderer.on('index-status', (_e, s) => cb(s)),
-  onShown: (cb) => ipcRenderer.on('window-shown', () => cb()),
+  onShown: (cb) => ipcRenderer.on('window-shown', (_e, d) => cb(d)),
+  onSetQuery: (cb) => ipcRenderer.on('set-query', (_e, q) => cb(q)),
+  onAiResponse: (cb) => ipcRenderer.on('ai-response', (_e, d) => cb(d)),
 });

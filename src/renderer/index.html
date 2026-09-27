@@ -4,56 +4,99 @@
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: file:;">
 <style>
+  :root {
+    --glass-bg: rgba(20, 20, 24, 0.65);
+    --glass-border: rgba(255,255,255,0.12);
+    --glass-blur: 40px;
+    --accent: #4ea1ff;
+    --accent-soft: rgba(78,161,255,0.22);
+    --text-primary: #f2f2f5;
+    --text-muted: rgba(255,255,255,0.38);
+    --radius-panel: 16px;
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --duration-fast: 120ms;
+    --duration-normal: 220ms;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { background: transparent; overflow: hidden; height: 100%;
     font-family: 'Segoe UI', system-ui, sans-serif; user-select: none; }
 
   #panel {
     margin: 8px;
-    background: rgba(28, 28, 32, 0.96);
-    border: 1px solid rgba(255,255,255,0.09);
-    border-radius: 14px;
-    box-shadow: 0 18px 60px rgba(0,0,0,0.55);
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-panel);
+    box-shadow: 0 24px 80px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
     overflow: hidden;
     display: flex; flex-direction: column;
     max-height: calc(100% - 16px);
+    transform-origin: center top;
+    animation: panelIn var(--duration-normal) var(--ease-spring);
+  }
+  @keyframes panelIn {
+    from { opacity: 0; transform: scale(0.96) translateY(-8px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #panel { animation: none; }
+    .row { transition: none !important; }
   }
 
   #searchbox {
     display: flex; align-items: center; gap: 12px;
     padding: 16px 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
   }
   #glass { font-size: 20px; opacity: 0.55; }
   #q {
     flex: 1; background: transparent; border: none; outline: none;
-    color: #f2f2f5; font-size: 21px; font-weight: 350;
-    caret-color: #4ea1ff;
+    color: var(--text-primary); font-size: 21px; font-weight: 350;
+    caret-color: var(--accent);
   }
   #q::placeholder { color: rgba(255,255,255,0.28); }
 
   #status {
     font-size: 11px; color: rgba(255,255,255,0.35); white-space: nowrap; cursor: pointer;
+    transition: color var(--duration-fast);
   }
+  #status:hover { color: var(--accent); }
 
   #results {
-    border-top: 1px solid rgba(255,255,255,0.07);
     overflow-y: auto; overscroll-behavior: contain;
     display: none;
+    max-height: 340px;
   }
   #results.has { display: block; }
-  #results::-webkit-scrollbar { width: 8px; }
-  #results::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+  #results::-webkit-scrollbar { width: 6px; }
+  #results::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+
+  .section-label {
+    padding: 8px 18px 4px;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: rgba(255,255,255,0.3);
+  }
 
   .row {
     display: flex; align-items: center; gap: 12px;
     padding: 9px 18px; cursor: pointer;
+    transition: background var(--duration-fast);
+    animation: rowIn var(--duration-normal) var(--ease-spring) both;
   }
-  .row.sel { background: rgba(78,161,255,0.22); }
+  @keyframes rowIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .row.sel { background: var(--accent-soft); }
+  .row:hover { background: rgba(255,255,255,0.05); }
   .icon {
-    width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0;
+    width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
     font-size: 17px; background: rgba(255,255,255,0.07); overflow: hidden;
+    transition: transform var(--duration-fast);
   }
+  .row.sel .icon { transform: scale(1.05); }
   .icon img { width: 22px; height: 22px; object-fit: contain; }
   .icon.app    { background: rgba(78,161,255,0.18); }
   .icon.folder { background: rgba(255,193,79,0.15); }
@@ -63,47 +106,84 @@
   .meta { min-width: 0; flex: 1; }
   .name { color: #f0f0f3; font-size: 14.5px; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; }
-  .path { color: rgba(255,255,255,0.38); font-size: 11.5px; white-space: nowrap;
+  .name mark { background: rgba(78,161,255,0.35); color: #fff; border-radius: 2px; padding: 0 1px; }
+  .path { color: var(--text-muted); font-size: 11.5px; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
   .kind { font-size: 10px; color: rgba(255,255,255,0.3); text-transform: uppercase;
     letter-spacing: 0.08em; flex-shrink: 0; }
+  .shortcut { font-size: 10px; color: rgba(255,255,255,0.25); margin-left: 8px; }
 
   #preview {
     display: none; border-top: 1px solid rgba(255,255,255,0.07);
     padding: 10px 18px; max-height: 140px; overflow-y: auto;
     font-size: 11.5px; color: rgba(255,255,255,0.55); white-space: pre-wrap; word-break: break-word;
+    background: rgba(0,0,0,0.15);
+    animation: previewIn var(--duration-normal) ease;
   }
+  @keyframes previewIn { from { opacity: 0; } to { opacity: 1; } }
   #preview.has { display: block; }
-  #preview img { max-width: 100%; max-height: 120px; display: block; }
+  #preview img { max-width: 100%; max-height: 120px; display: block; border-radius: 6px; }
+  .preview-meta {
+    font-size: 11px; color: rgba(255,255,255,0.45);
+    margin-bottom: 6px; padding-bottom: 4px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    font-family: inherit;
+  }
 
   #hints {
     display: none; padding: 8px 18px;
     border-top: 1px solid rgba(255,255,255,0.07);
     font-size: 11px; color: rgba(255,255,255,0.35);
+    background: rgba(0,0,0,0.1);
   }
-  #hints.has { display: flex; gap: 18px; }
+  #hints.has { display: flex; gap: 18px; flex-wrap: wrap; }
   kbd {
     background: rgba(255,255,255,0.1); border-radius: 4px; padding: 1px 5px;
     font-family: inherit; font-size: 10px;
   }
+
+  #action-panel {
+    display: none; padding: 8px 18px; gap: 8px; flex-wrap: wrap;
+    border-top: 1px solid rgba(255,255,255,0.07);
+    background: rgba(0,0,0,0.12);
+  }
+  #action-panel.has { display: flex; }
+  .action-btn {
+    background: rgba(78,161,255,0.15); border: 1px solid rgba(78,161,255,0.3);
+    color: #cfe4ff; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer;
+    transition: background var(--duration-fast);
+  }
+  .action-btn:hover { background: rgba(78,161,255,0.3); }
+  .action-btn.sel { background: rgba(78,161,255,0.4); }
+
+  #toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: rgba(78,161,255,0.92); color: #fff; padding: 8px 16px;
+    border-radius: 8px; font-size: 12px; opacity: 0; transition: opacity 0.2s;
+    pointer-events: none; z-index: 100;
+  }
+  #toast.show { opacity: 1; }
 </style>
 </head>
 <body>
 <div id="panel">
   <div id="searchbox">
     <span id="glass">&#128269;</span>
-    <input id="q" placeholder="Search apps, files, folders, or type a calculation&hellip;" autofocus spellcheck="false">
+    <input id="q" placeholder="Search apps, files, @clip, @emoji, or calculate&hellip;" autofocus spellcheck="false">
     <span id="status" title="Open settings"></span>
   </div>
   <div id="results"></div>
+  <div id="action-panel"></div>
   <div id="preview"></div>
   <div id="hints">
     <span><kbd>&#8629;</kbd> <span id="hintPrimary">Open</span></span>
     <span id="hintSecondary" style="display:none"><kbd>Ctrl</kbd>+<kbd>&#8629;</kbd> <span id="hintSecondaryLabel">Show in Explorer</span></span>
+    <span><kbd>Tab</kbd> Actions</span>
     <span><kbd>&#8593;&#8595;</kbd> Navigate</span>
     <span><kbd>Esc</kbd> Close</span>
   </div>
 </div>
+<div id="toast"></div>
 
 <script>
   const $q = document.getElementById('q');
@@ -114,31 +194,139 @@
   const $hintPrimary = document.getElementById('hintPrimary');
   const $hintSecondary = document.getElementById('hintSecondary');
   const $hintSecondaryLabel = document.getElementById('hintSecondaryLabel');
+  const $actionPanel = document.getElementById('action-panel');
+  const $toast = document.getElementById('toast');
+  const $panel = document.getElementById('panel');
 
   let items = [];
   let sel = 0;
   let timer = null;
   let queryId = 0;
   let previewTimer = null;
+  let showActions = false;
+  let actionSel = 0;
 
-  const ICONS = { app: '▶', folder: '📁', file: '📄', calc: '🧮', convert: '🔁', websearch: '🌐', clip: '📋', snippet: '✂️' };
-  const ACTION_LABELS = { open: 'Open', reveal: 'Show in Explorer', copy: 'Copy', paste: 'Paste', 'open-external': 'Open in browser' };
+  const ICONS = {
+    app: '▶', folder: '📁', file: '📄', calc: '🧮', convert: '🔁', websearch: '🌐',
+    clip: '📋', snippet: '✂️', emoji: '😀', quicklink: '🔗', system: '⚙️', command: '⚡',
+    window: '🪟', game: '🎮', process: '⚙️', workflow: '⚡', ai: '✨', extension: '🧩',
+  };
+  const ACTION_LABELS = {
+    open: 'Open', reveal: 'Show in Explorer', copy: 'Copy', paste: 'Paste',
+    'open-external': 'Open in browser', 'open-settings': 'Open Settings',
+    'rebuild-index': 'Rebuild Index', 'scope-clip': 'Browse Clipboard',
+    'system-run': 'Run', 'window-focus': 'Focus', 'window-snap': 'Snap',
+    'kill-process': 'Kill', 'ai-ask': 'Ask AI', 'ai-chat': 'AI Chat',
+    'run-workflow': 'Run Workflow', 'pin-favourite': 'Pin',
+  };
   const TEXT_PREVIEW_EXTS = new Set(['.txt', '.md', '.json', '.log', '.csv', '.js', '.ts', '.py', '.yml', '.yaml', '.xml', '.ini', '.cfg', '.conf']);
   const IMAGE_PREVIEW_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
+
+  function toast(msg) {
+    $toast.textContent = msg;
+    $toast.classList.add('show');
+    setTimeout(() => $toast.classList.remove('show'), 2000);
+  }
 
   function fmtCount(n) {
     return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'K' : String(n);
   }
 
+  function applyAppearance(app) {
+    if (!app) return;
+    const root = document.documentElement;
+    if (app.accentColor) root.style.setProperty('--accent', app.accentColor);
+    if (app.glassBlur != null) root.style.setProperty('--glass-blur', app.glassBlur + 'px');
+    if (app.theme === 'light') {
+      root.style.setProperty('--glass-bg', 'rgba(255,255,255,0.72)');
+      root.style.setProperty('--text-primary', '#1a1a1e');
+    }
+  }
+
+  function formatRelativeDate(mtime) {
+    if (!mtime) return '';
+    const diffSec = Math.floor((Date.now() - mtime) / 1000);
+    if (diffSec < 60) return 'just now';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return diffMin + ' min ago';
+    const diffHour = Math.floor(diffMin / 60);
+    if (diffHour < 24) return diffHour + (diffHour === 1 ? ' hour ago' : ' hours ago');
+    const diffDays = Math.floor(diffHour / 24);
+    if (diffDays < 7) return diffDays + (diffDays === 1 ? ' day ago' : ' days ago');
+    const diffWeeks = Math.floor(diffDays / 7);
+    if (diffWeeks < 4) return diffWeeks + (diffWeeks === 1 ? ' week ago' : ' weeks ago');
+    const d = new Date(mtime);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes == null || bytes < 0) return '';
+    if (bytes < 1024) return bytes + ' B';
+    const kb = bytes / 1024;
+    if (kb < 1024) return kb.toFixed(1) + ' KB';
+    const mb = kb / 1024;
+    if (mb < 1024) return mb.toFixed(1) + ' MB';
+    const gb = mb / 1024;
+    return gb.toFixed(1) + ' GB';
+  }
+
+  function formatStaleness(ts) {
+    if (!ts) return '';
+    const sec = Math.floor((Date.now() - ts) / 1000);
+    if (sec < 60) return `index refreshed ${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    return `index refreshed ${min}min ago`;
+  }
+
+  let currentStatus = null;
+  function renderStatus() {
+    if (!currentStatus) return;
+    const s = currentStatus;
+    const stale = s.lastIndexUpdate ? ' · ' + formatStaleness(s.lastIndexUpdate) : '';
+    $status.textContent = (s.status === 'ready'
+      ? fmtCount(s.indexed) + ' items'
+      : 'indexing… ' + fmtCount(s.scanned || s.indexed)) + stale + ' ⚙';
+  }
+
   window.lumos.onStatus((s) => {
-    $status.textContent = s.status === 'ready'
-      ? fmtCount(s.indexed) + ' items ⚙'
-      : 'indexing… ' + fmtCount(s.scanned || s.indexed) + ' ⚙';
+    currentStatus = s;
+    renderStatus();
   });
+
+  setInterval(renderStatus, 30000);
 
   $status.addEventListener('click', () => window.lumos.openSettings());
 
-  window.lumos.onShown(() => { $q.focus(); $q.select(); });
+  window.lumos.onShown((d) => {
+    $q.focus();
+    $q.select();
+    renderStatus();
+    if (d && d.appearance) applyAppearance(d.appearance);
+    else window.lumos.getAppearance().then(applyAppearance);
+    doSearch();
+  });
+
+  window.lumos.onSetQuery((q) => { $q.value = q; doSearch(); });
+  window.lumos.onAiResponse((d) => {
+    if (d.error) toast('AI: ' + d.error);
+    else toast('AI response copied to clipboard');
+  });
+
+  function highlightTitle(title, ranges) {
+    if (!ranges || !ranges.length) return title;
+    const parts = [];
+    let last = 0;
+    for (const [start, end] of ranges) {
+      if (start > last) parts.push(title.slice(last, start));
+      parts.push('<mark>' + title.slice(start, end) + '</mark>');
+      last = end;
+    }
+    if (last < title.length) parts.push(title.slice(last));
+    return parts.join('');
+  }
 
   function extOf(p) {
     const dot = p.lastIndexOf('.');
@@ -146,22 +334,38 @@
     return dot > slash ? p.slice(dot).toLowerCase() : '';
   }
 
+  function renderActionPanel() {
+    $actionPanel.innerHTML = '';
+    const it = items[sel];
+    if (!showActions || !it) { $actionPanel.classList.remove('has'); return; }
+    $actionPanel.classList.add('has');
+    (it.actions || []).forEach((act, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'action-btn' + (i === actionSel ? ' sel' : '');
+      btn.textContent = ACTION_LABELS[act] || act;
+      btn.onclick = () => activate(sel, act);
+      $actionPanel.appendChild(btn);
+    });
+  }
+
   function render() {
     $results.innerHTML = '';
     items.forEach((it, i) => {
       const row = document.createElement('div');
       row.className = 'row' + (i === sel ? ' sel' : '');
+      row.style.animationDelay = Math.min(i, 8) * 30 + 'ms';
       row.dataset.i = i;
 
       const icon = document.createElement('div');
       icon.className = 'icon ' + it.type;
-      icon.textContent = ICONS[it.type] || '❔';
+      icon.textContent = it.icon || ICONS[it.type] || '❔';
 
       const meta = document.createElement('div');
       meta.className = 'meta';
       const name = document.createElement('div');
       name.className = 'name';
-      name.textContent = it.title;
+      if (it.matchRanges) name.innerHTML = highlightTitle(it.title, it.matchRanges);
+      else name.textContent = it.title;
       const p = document.createElement('div');
       p.className = 'path';
       p.textContent = it.subtitle;
@@ -170,13 +374,18 @@
       const kind = document.createElement('div');
       kind.className = 'kind';
       kind.textContent = it.type;
+      if (i < 9) {
+        const sc = document.createElement('span');
+        sc.className = 'shortcut';
+        sc.textContent = '⌃' + (i + 1);
+        kind.appendChild(sc);
+      }
 
       row.append(icon, meta, kind);
       row.addEventListener('click', (e) => activate(i, e.ctrlKey ? preferAction(it, 'reveal') : undefined));
       row.addEventListener('mousemove', () => { if (sel !== i) { sel = i; markSel(); } });
       $results.appendChild(row);
 
-      // Real icon fetched lazily, after the placeholder already painted.
       if (it.type === 'file' || it.type === 'folder' || it.type === 'app') {
         const myQuery = queryId;
         window.lumos.getIcon(it.data.path, it.type).then((dataUrl) => {
@@ -194,6 +403,7 @@
     $hints.classList.toggle('has', items.length > 0);
     updateHints();
     updatePreview();
+    renderActionPanel();
   }
 
   function preferAction(it, action) {
@@ -214,32 +424,77 @@
     }
   }
 
+  let lastMetaPath = null;
+  let lastMetaData = null;
+
   function updatePreview() {
     clearTimeout(previewTimer);
     const it = items[sel];
-    if (!it || it.type !== 'file') { $preview.classList.remove('has'); $preview.innerHTML = ''; return; }
-    const ext = extOf(it.data.path);
-    if (!TEXT_PREVIEW_EXTS.has(ext) && !IMAGE_PREVIEW_EXTS.has(ext)) {
-      $preview.classList.remove('has'); $preview.innerHTML = '';
+    if (!it || !it.data || !it.data.path) {
+      $preview.classList.remove('has');
+      $preview.innerHTML = '';
       return;
     }
+    const p = it.data.path;
+    const ext = extOf(p);
+    const hasText = it.type === 'file' && TEXT_PREVIEW_EXTS.has(ext);
+    const hasImage = it.type === 'file' && IMAGE_PREVIEW_EXTS.has(ext);
+
     previewTimer = setTimeout(async () => {
       const myQuery = queryId, mySel = sel;
-      if (IMAGE_PREVIEW_EXTS.has(ext)) {
-        if (myQuery !== queryId || mySel !== sel) return;
-        $preview.innerHTML = '';
+      let meta = null;
+      if (lastMetaPath === p) {
+        meta = lastMetaData;
+      } else {
+        try {
+          meta = await window.lumos.getMeta(p);
+          lastMetaPath = p;
+          lastMetaData = meta;
+        } catch { meta = null; }
+      }
+      if (myQuery !== queryId || mySel !== sel) return;
+
+      let metaText = '';
+      if (meta) {
+        const parts = [];
+        if (meta.mtime) parts.push('Modified ' + formatRelativeDate(meta.mtime));
+        if (meta.size != null && it.type === 'file') parts.push(formatFileSize(meta.size));
+        metaText = parts.join(' · ');
+      }
+
+      let contentEl = null;
+      if (hasImage) {
         const img = document.createElement('img');
-        img.src = 'file:///' + it.data.path.replace(/\\/g, '/');
-        $preview.appendChild(img);
-        $preview.classList.add('has');
+        img.src = 'file:///' + p.replace(/\\/g, '/');
+        contentEl = img;
+      } else if (hasText) {
+        const text = await window.lumos.previewFile(p);
+        if (myQuery !== queryId || mySel !== sel) return;
+        if (text != null) {
+          const pre = document.createElement('div');
+          pre.textContent = text;
+          contentEl = pre;
+        }
+      }
+
+      if (!metaText && !contentEl) {
+        $preview.classList.remove('has');
+        $preview.innerHTML = '';
         return;
       }
-      const text = await window.lumos.previewFile(it.data.path);
-      if (myQuery !== queryId || mySel !== sel) return;
-      if (text == null) { $preview.classList.remove('has'); $preview.innerHTML = ''; return; }
-      $preview.textContent = text;
+
+      $preview.innerHTML = '';
+      if (metaText) {
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'preview-meta';
+        metaDiv.textContent = metaText;
+        $preview.appendChild(metaDiv);
+      }
+      if (contentEl) {
+        $preview.appendChild(contentEl);
+      }
       $preview.classList.add('has');
-    }, 150);
+    }, 120);
   }
 
   function markSel() {
@@ -248,21 +503,25 @@
     if (el) el.scrollIntoView({ block: 'nearest' });
     updateHints();
     updatePreview();
+    renderActionPanel();
   }
 
   function activate(i, actionOverride) {
     const it = items[i];
     if (!it) return;
-    const action = actionOverride || it.actions[0];
+    const action = actionOverride || (showActions && it.actions[actionSel]) || it.actions[0];
     window.lumos.runAction(action, it);
+    showActions = false;
+    actionSel = 0;
   }
 
   async function doSearch() {
     const my = ++queryId;
     const q = $q.value;
-    if (!q.trim()) { items = []; sel = 0; render(); return; }
+    showActions = false;
+    actionSel = 0;
     const res = await window.lumos.search(q);
-    if (my !== queryId) return; // stale response
+    if (my !== queryId) return;
     items = res.results;
     sel = 0;
     $status.textContent = (res.status === 'ready'
@@ -273,16 +532,57 @@
 
   $q.addEventListener('input', () => {
     clearTimeout(timer);
-    timer = setTimeout(doSearch, 90);
+    timer = setTimeout(doSearch, 80);
   });
 
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { window.lumos.hide(); return; }
+    if (e.key === 'Escape') {
+      if (showActions) { showActions = false; renderActionPanel(); e.preventDefault(); return; }
+      window.lumos.hide(); return;
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      showActions = !showActions;
+      actionSel = 0;
+      renderActionPanel();
+      return;
+    }
+    if (showActions && items[sel]) {
+      const acts = items[sel].actions || [];
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        actionSel = (actionSel + 1) % acts.length;
+        renderActionPanel();
+        return;
+      }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        actionSel = (actionSel - 1 + acts.length) % acts.length;
+        renderActionPanel();
+        return;
+      }
+    }
+    if (e.ctrlKey && e.key >= '1' && e.key <= '9') {
+      e.preventDefault();
+      const idx = parseInt(e.key, 10) - 1;
+      if (items[idx]) activate(idx);
+      return;
+    }
     if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) { sel = (sel + 1) % items.length; markSel(); } }
     else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length) { sel = (sel - 1 + items.length) % items.length; markSel(); } }
     else if (e.key === 'Enter') {
       e.preventDefault();
-      activate(sel, e.ctrlKey ? preferAction(items[sel], 'reveal') : undefined);
+      if (e.altKey) activate(sel, preferAction(items[sel], 'reveal'));
+      else activate(sel, e.ctrlKey ? preferAction(items[sel], 'reveal') : undefined);
+    }
+    else if (e.ctrlKey && e.key === ',') { e.preventDefault(); window.lumos.openSettings(); }
+    else if (e.ctrlKey && e.shiftKey && e.key === 'C') {
+      e.preventDefault();
+      if (items[sel]) window.lumos.runAction('copy', items[sel]);
+    }
+    else if (e.ctrlKey && e.shiftKey && e.key === 'V') {
+      e.preventDefault();
+      if (items[sel]) window.lumos.runAction('paste', items[sel]);
     }
   });
 </script>

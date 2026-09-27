@@ -4,11 +4,23 @@
 // when the user activates the result (Enter), never during search().
 
 // ---------------------------------------------------------------------------
-// Calculator — supports + - * / ^ % and parentheses, hand-rolled parser.
-// ---------------------------------------------------------------------------
-const CALC_GATE = /^[\d\s+\-*/().^%]+$/;
+// Calculator — supports + - * / ^ % and parentheses, plus natural language (x, ×).
+
+const CALC_GATE = /^[\d\s+\-*/().^%x×€$£¥,]+$/i;
 const HAS_DIGIT = /\d/;
-const HAS_OPERATOR = /[+\-*/^%]/;
+const HAS_OPERATOR = /[+\-*/^%x×]/i;
+
+function normalizeCalcInput(q) {
+  return q
+    .replace(/×/g, '*')
+    .replace(/\bx\b/gi, '*')
+    .replace(/€/g, '')
+    .replace(/\$/g, '')
+    .replace(/£/g, '')
+    .replace(/¥/g, '')
+    .replace(/,/g, '')
+    .trim();
+}
 
 function tokenize(expr) {
   const tokens = [];
@@ -95,18 +107,18 @@ function parseExpr(tokens) {
 }
 
 function tryCalculator(q) {
-  const trimmed = q.trim();
-  if (!CALC_GATE.test(trimmed) || !HAS_DIGIT.test(trimmed) || !HAS_OPERATOR.test(trimmed)) return null;
+  const normalized = normalizeCalcInput(q);
+  if (!CALC_GATE.test(q) || !HAS_DIGIT.test(normalized) || !HAS_OPERATOR.test(normalized)) return null;
   try {
-    const tokens = tokenize(trimmed);
+    const tokens = tokenize(normalized);
     const value = parseExpr(tokens);
     if (!Number.isFinite(value)) return null;
     const display = Number.isInteger(value) ? String(value) : String(Math.round(value * 1e10) / 1e10);
     return {
       type: 'calc',
-      id: 'calc:' + trimmed,
+      id: 'calc:' + q.trim(),
       title: display,
-      subtitle: 'Calculator · ' + trimmed + ' =',
+      subtitle: 'Calculator · ' + q.trim() + ' =',
       score: 1100,
       icon: null,
       actions: ['copy'],

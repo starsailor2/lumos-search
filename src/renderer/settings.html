@@ -15,11 +15,11 @@
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: rgba(255,255,255,0.55); margin-bottom: 12px; }
   label.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; font-size: 13.5px; }
   label.row span.desc { color: rgba(255,255,255,0.4); font-size: 11.5px; display: block; margin-top: 2px; }
-  input[type=text], input[type=number], input[type=url] {
+  input[type=text], input[type=number], input[type=url], input[type=password], select {
     background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
     border-radius: 6px; color: #f0f0f3; padding: 6px 9px; font-size: 13px; outline: none;
   }
-  input[type=text]:focus, input[type=number]:focus, input[type=url]:focus { border-color: #4ea1ff; }
+  input:focus, select:focus { border-color: #4ea1ff; }
   input[type=checkbox] { width: 16px; height: 16px; accent-color: #4ea1ff; }
   button {
     background: rgba(78,161,255,0.16); border: 1px solid rgba(78,161,255,0.35); color: #cfe4ff;
@@ -37,7 +37,7 @@
     border-radius: 6px; color: #f0f0f3; padding: 6px 9px; font-size: 13px; min-width: 140px; text-align: center; cursor: text;
   }
   .hotkey-input.recording { border-color: #4ea1ff; color: #4ea1ff; }
-  .snippet-row { display: grid; grid-template-columns: 100px 1fr auto; gap: 8px; align-items: start; margin-bottom: 8px; }
+  .snippet-row, .ql-row { display: grid; grid-template-columns: 100px 1fr 1fr auto; gap: 8px; align-items: start; margin-bottom: 8px; }
   .snippet-row textarea {
     background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px;
     color: #f0f0f3; padding: 6px 9px; font-size: 12.5px; resize: vertical; min-height: 32px; font-family: inherit;
@@ -53,35 +53,32 @@
 
 <section>
   <h2>Hotkeys</h2>
-  <label class="row">
-    Primary hotkey
-    <span class="hotkey-input" id="hk0" tabindex="0">Alt+,</span>
+  <label class="row"><span>Primary hotkey</span><span class="hotkey-input" id="hk0" tabindex="0">Alt+,</span></label>
+  <label class="row"><span>Secondary hotkey</span><span class="hotkey-input" id="hk1" tabindex="0">Alt+X</span></label>
+  <label class="row"><span>Fallback 1<span class="desc">Used if primary is taken</span></span><input type="text" id="fb0" style="width:160px"></label>
+  <label class="row"><span>Fallback 2</span><input type="text" id="fb1" style="width:160px"></label>
+</section>
+
+<section>
+  <h2>Appearance</h2>
+  <label class="row"><span>Theme</span>
+    <select id="theme"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select>
   </label>
-  <label class="row">
-    Secondary hotkey
-    <span class="hotkey-input" id="hk1" tabindex="0">Alt+X</span>
-  </label>
-  <p class="hint">Click a hotkey box, then press the key combination you want. Esc cancels.</p>
+  <label class="row"><span>Accent color</span><input type="text" id="accentColor" style="width:100px" placeholder="#4ea1ff"></label>
+  <label class="row"><span>Glass blur (px)</span><input type="number" id="glassBlur" min="0" max="80" style="width:70px"></label>
+  <label class="row"><span>Animations</span><input type="checkbox" id="animations"></label>
 </section>
 
 <section>
   <h2>Indexing</h2>
-  <label class="row">
-    <span>Max results shown<span class="desc">How many results appear per search</span></span>
-    <input type="number" id="maxResults" min="5" max="200" style="width:70px">
-  </label>
+  <label class="row"><span>Max results<span class="desc">Per search</span></span><input type="number" id="maxResults" min="5" max="200" style="width:70px"></label>
   <div class="list" id="rootsList"></div>
-  <button id="addRoot">+ Add folder to index</button>
-  <button id="useAllDrives" style="margin-left:8px">Use all drives (default)</button>
-  <p class="hint" style="margin-top:10px">Excluded folder names (skipped everywhere, e.g. "node_modules")</p>
+  <button id="addRoot">+ Add folder</button>
+  <button id="useAllDrives" style="margin-left:8px">Use all drives</button>
+  <p class="hint" style="margin-top:10px">Excluded folder names</p>
   <div class="list" id="excludeList"></div>
-  <div style="display:flex; gap:8px;">
-    <input type="text" id="newExclude" placeholder="folder name">
-    <button id="addExclude">Add</button>
-  </div>
-  <div style="margin-top:14px">
-    <button id="rebuildIndex">Rebuild index now</button>
-  </div>
+  <div style="display:flex; gap:8px;"><input type="text" id="newExclude" placeholder="folder name"><button id="addExclude">Add</button></div>
+  <div style="margin-top:14px"><button id="rebuildIndex">Rebuild index now</button></div>
 </section>
 
 <section>
@@ -89,17 +86,22 @@
   <label class="row"><span>Calculator</span><input type="checkbox" id="qaCalc"></label>
   <label class="row"><span>Unit conversion</span><input type="checkbox" id="qaConvert"></label>
   <label class="row"><span>Web search fallback</span><input type="checkbox" id="qaWeb"></label>
-  <label class="row">
-    <span>Search engine URL<span class="desc">Use %s where the query goes</span></span>
-    <input type="url" id="qaWebEngine" style="width:280px">
-  </label>
+  <label class="row"><span>Search engine URL<span class="desc">%s = query</span></span><input type="url" id="qaWebEngine" style="width:280px"></label>
+</section>
+
+<section>
+  <h2>Quicklinks</h2>
+  <div id="quicklinksList"></div>
+  <button id="addQuicklink">+ Add quicklink</button>
 </section>
 
 <section>
   <h2>Clipboard history</h2>
-  <label class="row"><span>Enable clipboard history<span class="desc">Text only; disable any time</span></span><input type="checkbox" id="clipEnabled"></label>
-  <label class="row"><span>Keep across restarts<span class="desc">If off, history is never written to disk</span></span><input type="checkbox" id="clipRetain"></label>
+  <label class="row"><span>Enable</span><input type="checkbox" id="clipEnabled"></label>
+  <label class="row"><span>Keep across restarts</span><input type="checkbox" id="clipRetain"></label>
   <label class="row"><span>Max entries</span><input type="number" id="clipMax" min="1" max="500" style="width:70px"></label>
+  <label class="row"><span>Max text chars</span><input type="number" id="clipMaxChars" min="100" max="200000" style="width:90px"></label>
+  <button class="danger" id="clearClipboard" style="margin-top:8px">Clear clipboard history</button>
 </section>
 
 <section>
@@ -109,8 +111,16 @@
 </section>
 
 <section>
+  <h2>AI (Quick AI)</h2>
+  <label class="row"><span>Enable AI</span><input type="checkbox" id="aiEnabled"></label>
+  <label class="row"><span>API key<span class="desc">Stored locally only</span></span><input type="password" id="aiKey" style="width:280px" autocomplete="off"></label>
+  <label class="row"><span>Endpoint</span><input type="url" id="aiEndpoint" style="width:280px"></label>
+  <label class="row"><span>Model</span><input type="text" id="aiModel" style="width:160px"></label>
+</section>
+
+<section>
   <h2>Usage data</h2>
-  <button class="danger" id="clearFrecency">Clear usage history (ranking resets)</button>
+  <button class="danger" id="clearFrecency">Clear usage history</button>
 </section>
 
 <div id="toast"></div>
@@ -129,6 +139,7 @@
   async function save(patch) {
     cfg = await window.lumosSettings.updateConfig(patch);
     toast('Saved');
+    renderAll();
   }
 
   function renderRoots() {
@@ -145,16 +156,15 @@
     roots.forEach((r, i) => {
       const row = document.createElement('div');
       row.className = 'list-item';
-      const span = document.createElement('span');
-      span.textContent = r;
+      row.innerHTML = '<span>' + r + '</span>';
       const btn = document.createElement('button');
       btn.textContent = 'Remove';
-      btn.onclick = () => {
+      btn.onclick = async () => {
         const next = roots.slice();
         next.splice(i, 1);
-        save({ indexedRoots: next.length ? next : null });
+        await save({ indexedRoots: next.length ? next : null });
       };
-      row.append(span, btn);
+      row.appendChild(btn);
       list.appendChild(row);
     });
   }
@@ -165,16 +175,15 @@
     cfg.excludedDirs.forEach((d, i) => {
       const row = document.createElement('div');
       row.className = 'list-item';
-      const span = document.createElement('span');
-      span.textContent = d;
+      row.innerHTML = '<span>' + d + '</span>';
       const btn = document.createElement('button');
       btn.textContent = 'Remove';
-      btn.onclick = () => {
+      btn.onclick = async () => {
         const next = cfg.excludedDirs.slice();
         next.splice(i, 1);
-        save({ excludedDirs: next });
+        await save({ excludedDirs: next });
       };
-      row.append(span, btn);
+      row.appendChild(btn);
       list.appendChild(row);
     });
   }
@@ -186,16 +195,11 @@
       const row = document.createElement('div');
       row.className = 'snippet-row';
       const trigger = document.createElement('input');
-      trigger.type = 'text';
-      trigger.value = snip.trigger;
-      trigger.placeholder = 'trigger';
+      trigger.type = 'text'; trigger.value = snip.trigger; trigger.placeholder = 'trigger';
       const body = document.createElement('textarea');
-      body.value = snip.body;
-      body.placeholder = 'snippet text';
+      body.value = snip.body; body.placeholder = 'snippet text';
       const del = document.createElement('button');
-      del.textContent = 'Delete';
-      del.className = 'danger';
-
+      del.textContent = 'Delete'; del.className = 'danger';
       const commit = () => {
         const next = cfg.snippets.slice();
         next[i] = { ...snip, trigger: trigger.value, body: body.value };
@@ -203,13 +207,44 @@
       };
       trigger.addEventListener('change', commit);
       body.addEventListener('change', commit);
-      del.onclick = () => {
+      del.onclick = async () => {
         const next = cfg.snippets.slice();
         next.splice(i, 1);
-        save({ snippets: next });
+        await save({ snippets: next });
       };
-
       row.append(trigger, body, del);
+      list.appendChild(row);
+    });
+  }
+
+  function renderQuicklinks() {
+    const list = $('quicklinksList');
+    list.innerHTML = '';
+    (cfg.quicklinks || []).forEach((ql, i) => {
+      const row = document.createElement('div');
+      row.className = 'ql-row';
+      const kw = document.createElement('input');
+      kw.type = 'text'; kw.value = ql.keyword || ''; kw.placeholder = 'keyword';
+      const title = document.createElement('input');
+      title.type = 'text'; title.value = ql.title || ''; title.placeholder = 'title';
+      const url = document.createElement('input');
+      url.type = 'url'; url.value = ql.url || ''; url.placeholder = 'https://...';
+      const del = document.createElement('button');
+      del.textContent = 'Delete'; del.className = 'danger';
+      const commit = () => {
+        const next = (cfg.quicklinks || []).slice();
+        next[i] = { ...ql, keyword: kw.value, title: title.value, url: url.value };
+        save({ quicklinks: next });
+      };
+      kw.addEventListener('change', commit);
+      title.addEventListener('change', commit);
+      url.addEventListener('change', commit);
+      del.onclick = async () => {
+        const next = (cfg.quicklinks || []).slice();
+        next.splice(i, 1);
+        await save({ quicklinks: next });
+      };
+      row.append(kw, title, url, del);
       list.appendChild(row);
     });
   }
@@ -223,11 +258,25 @@
     $('clipEnabled').checked = cfg.clipboard.enabled;
     $('clipRetain').checked = cfg.clipboard.retainAcrossRestarts;
     $('clipMax').value = cfg.clipboard.maxEntries;
+    $('clipMaxChars').value = cfg.clipboard.maxTextChars;
     $('hk0').textContent = cfg.hotkeys[0] || '(unset)';
     $('hk1').textContent = cfg.hotkeys[1] || '(unset)';
+    $('fb0').value = (cfg.hotkeyFallbacks || [])[0] || '';
+    $('fb1').value = (cfg.hotkeyFallbacks || [])[1] || '';
+    const app = cfg.appearance || {};
+    $('theme').value = app.theme || 'system';
+    $('accentColor').value = app.accentColor || '#4ea1ff';
+    $('glassBlur').value = app.glassBlur != null ? app.glassBlur : 40;
+    $('animations').checked = app.animations !== false;
+    const ai = cfg.ai || {};
+    $('aiEnabled').checked = ai.enabled === true;
+    $('aiKey').value = ai.apiKey || '';
+    $('aiEndpoint').value = ai.endpoint || '';
+    $('aiModel').value = ai.model || 'gpt-4o-mini';
     renderRoots();
     renderExcludes();
     renderSnippets();
+    renderQuicklinks();
   }
 
   $('maxResults').addEventListener('change', (e) => save({ maxResults: Number(e.target.value) }));
@@ -238,12 +287,30 @@
   $('clipEnabled').addEventListener('change', (e) => save({ clipboard: { enabled: e.target.checked } }));
   $('clipRetain').addEventListener('change', (e) => save({ clipboard: { retainAcrossRestarts: e.target.checked } }));
   $('clipMax').addEventListener('change', (e) => save({ clipboard: { maxEntries: Number(e.target.value) } }));
+  $('clipMaxChars').addEventListener('change', (e) => save({ clipboard: { maxTextChars: Number(e.target.value) } }));
+  $('theme').addEventListener('change', (e) => save({ appearance: { theme: e.target.value } }));
+  $('accentColor').addEventListener('change', (e) => save({ appearance: { accentColor: e.target.value } }));
+  $('glassBlur').addEventListener('change', (e) => save({ appearance: { glassBlur: Number(e.target.value) } }));
+  $('animations').addEventListener('change', (e) => save({ appearance: { animations: e.target.checked } }));
+  $('aiEnabled').addEventListener('change', (e) => save({ ai: { enabled: e.target.checked } }));
+  $('aiKey').addEventListener('change', (e) => save({ ai: { apiKey: e.target.value } }));
+  $('aiEndpoint').addEventListener('change', (e) => save({ ai: { endpoint: e.target.value } }));
+  $('aiModel').addEventListener('change', (e) => save({ ai: { model: e.target.value } }));
+  $('fb0').addEventListener('change', (e) => {
+    const fb = (cfg.hotkeyFallbacks || []).slice();
+    fb[0] = e.target.value;
+    save({ hotkeyFallbacks: fb });
+  });
+  $('fb1').addEventListener('change', (e) => {
+    const fb = (cfg.hotkeyFallbacks || []).slice();
+    fb[1] = e.target.value;
+    save({ hotkeyFallbacks: fb });
+  });
 
   $('addRoot').addEventListener('click', async () => {
     const dir = await window.lumosSettings.pickFolder();
     if (!dir) return;
-    const next = (cfg.indexedRoots || []).concat(dir);
-    save({ indexedRoots: next });
+    await save({ indexedRoots: (cfg.indexedRoots || []).concat(dir) });
   });
   $('useAllDrives').addEventListener('click', () => save({ indexedRoots: null }));
   $('addExclude').addEventListener('click', () => {
@@ -252,35 +319,19 @@
     save({ excludedDirs: cfg.excludedDirs.concat(v) });
     $('newExclude').value = '';
   });
-  $('addSnippet').addEventListener('click', () => {
-    save({ snippets: cfg.snippets.concat({ trigger: '', body: '' }) });
-  });
-  $('rebuildIndex').addEventListener('click', () => {
-    window.lumosSettings.rebuildIndex();
-    toast('Rebuilding index…');
-  });
-  $('clearFrecency').addEventListener('click', () => {
-    window.lumosSettings.resetFrecency();
-    toast('Usage history cleared');
-  });
+  $('addSnippet').addEventListener('click', () => save({ snippets: cfg.snippets.concat({ trigger: '', body: '' }) }));
+  $('addQuicklink').addEventListener('click', () => save({ quicklinks: (cfg.quicklinks || []).concat({ keyword: '', title: '', url: '' }) }));
+  $('rebuildIndex').addEventListener('click', () => { window.lumosSettings.rebuildIndex(); toast('Rebuilding index…'); });
+  $('clearFrecency').addEventListener('click', () => { window.lumosSettings.resetFrecency(); toast('Usage history cleared'); });
+  $('clearClipboard').addEventListener('click', () => { window.lumosSettings.clearClipboard(); toast('Clipboard cleared'); });
 
-  // Hotkey recording
   function bindHotkeyBox(el, index) {
     let recording = false;
-    el.addEventListener('click', () => {
-      recording = true;
-      el.classList.add('recording');
-      el.textContent = 'Press keys…';
-    });
+    el.addEventListener('click', () => { recording = true; el.classList.add('recording'); el.textContent = 'Press keys…'; });
     el.addEventListener('keydown', (e) => {
       if (!recording) return;
       e.preventDefault();
-      if (e.key === 'Escape') {
-        recording = false;
-        el.classList.remove('recording');
-        el.textContent = cfg.hotkeys[index] || '(unset)';
-        return;
-      }
+      if (e.key === 'Escape') { recording = false; el.classList.remove('recording'); el.textContent = cfg.hotkeys[index] || '(unset)'; return; }
       const parts = [];
       if (e.ctrlKey) parts.push('Ctrl');
       if (e.altKey) parts.push('Alt');
@@ -289,12 +340,11 @@
       const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
       if (!['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
         parts.push(key === ',' ? ',' : key);
-        const accel = parts.join('+');
         const next = cfg.hotkeys.slice();
-        next[index] = accel;
+        next[index] = parts.join('+');
         recording = false;
         el.classList.remove('recording');
-        el.textContent = accel;
+        el.textContent = next[index];
         save({ hotkeys: next });
       }
     });
