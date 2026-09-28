@@ -23,34 +23,30 @@ const PASS_DRIVES = (workerData && Array.isArray(workerData.drives) && workerDat
 
 // Built-in skip list (all lowercase basenames)
 const BUILTIN_SKIP_DIRS = [
-  '$recycle.bin',
-  'system volume information',
-  '$windows.~bt',
-  '$windows.~ws',
-  'windows.old',
-  'winsxs',
-  'servicing',
-  'softwaredistribution',
-  'node_modules',
-  '.git',
-  '__pycache__',
-  '.cache',
-  'msocache',
-  'recovery',
-  'perflogs',
-  // High-noise, low-value trees
-  'appdata',
-  'application data', // legacy junction name for AppData
-  'onedrivetemp',
-  'windows',
-  '$winreagent',
-  'config.msi',
-  'temp',
-  'tmp',
-  'crashdumps',
-  'd3dscache',
-  'inetcache',
-  'webcache',
+  // Version control
+  '.git', '.svn', '.hg', '.bzr',
+  // Windows & OS system trees
+  '$recycle.bin', 'system volume information', '$windows.~bt', '$windows.~ws',
+  'windows.old', 'winsxs', 'servicing', 'softwaredistribution', 'msocache',
+  'recovery', 'perflogs', 'appdata', 'application data', 'onedrivetemp',
+  'windows', '$winreagent', 'config.msi', 'temp', 'tmp', 'crashdumps',
+  'd3dscache', 'inetcache', 'webcache',
+  // Python environments, packages & tooling
+  '.venv', 'venv', 'env', '.env', 'virtualenv', '.virtualenvs', '.conda',
+  'conda-env', 'site-packages', 'dist-packages', '__pycache__', '.pytest_cache',
+  '.mypy_cache', '.ruff_cache', '.tox', '.nox', '.hypothesis', '.eggs',
+  'pip-wheel-metadata',
+  // JavaScript / Node / Web dependencies & caches
+  'node_modules', 'bower_components', '.next', '.nuxt', '.turbo', '.npm',
+  '.pnpm', '.pnpm-store', '.yarn', '.yarn-cache', '.parcel-cache',
+  '.svelte-kit', '.output', '.docusaurus', '.cache',
+  // Rust / Cargo / Go / PHP / Ruby
+  'target', '.cargo', '.rustup', 'vendor', '.bundle',
+  // JVM / Gradle / Maven / Android
+  '.gradle', '.m2', '.ivy2', '.sbt', '.android',
+  // .NET / Visual Studio / IDEs / Build artifacts
+  'obj', 'bin', '.nuget', '.vs', '.idea', '.vscode', '.settings',
+  'cmake-build-debug', 'cmake-build-release', '.cxx', 'ipch',
 ];
 
 const extraExcluded = (workerData && Array.isArray(workerData.excludedDirs) ? workerData.excludedDirs : [])
@@ -62,6 +58,31 @@ const extraExcluded = (workerData && Array.isArray(workerData.excludedDirs) ? wo
 const SKIP_DIRS = (workerData && Array.isArray(workerData.skipDirs) && workerData.skipDirs.length)
   ? new Set(workerData.skipDirs.filter((d) => typeof d === 'string').map((d) => d.toLowerCase()))
   : new Set([...BUILTIN_SKIP_DIRS, ...extraExcluded]);
+
+// Detection for virtual environments, package directories, and build noise
+function isNoiseDir(name, fullPath) {
+  const lower = name.toLowerCase();
+  if (SKIP_DIRS.has(lower)) return true;
+
+  // Pattern checks for virtual environments (e.g. .venv, venv, my_venv, ocr_env, etc.)
+  if (
+    lower.startsWith('.venv') || lower.startsWith('venv') ||
+    lower.endsWith('_venv') || lower.endsWith('-venv') ||
+    lower.endsWith('_env') || lower.endsWith('-env') ||
+    lower.endsWith('.egg-info') || lower.endsWith('.dist-info')
+  ) {
+    return true;
+  }
+
+  // Fast check: directory containing pyvenv.cfg is definitively a Python virtual env
+  try {
+    if (fs.existsSync(path.join(fullPath, 'pyvenv.cfg'))) {
+      return true;
+    }
+  } catch { /* ignore */ }
+
+  return false;
+}
 
 // Junction and symlink loop prevention
 const visitedRealPaths = new Set();
@@ -145,8 +166,7 @@ async function walk(root, { appsOnly = false, lnkAsApps = false } = {}) {
       }
 
       if (isDir) {
-        const lower = name.toLowerCase();
-        if (SKIP_DIRS.has(lower)) continue;
+        if (isNoiseDir(name, full)) continue;
         if (!appsOnly) emit(full, 1);
         stack.push(full);
       } else if (ent.isFile()) {
@@ -155,6 +175,7 @@ async function walk(root, { appsOnly = false, lnkAsApps = false } = {}) {
         if (lower === 'desktop.ini' || lower === 'thumbs.db') continue;
         if (/~\$.*\.tmp$/i.test(name)) continue;
         if (/^\.(tmp|ds_store|localized|_*)$/i.test(name)) continue;
+        if (/\.(pyc|pyo|pyd)$/i.test(name)) continue;
 
         if (appsOnly) {
           if (/\.(lnk|url|appref-ms)$/i.test(name)) emit(full, 2);

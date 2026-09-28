@@ -1,10 +1,12 @@
-import type { SearchResult } from '../../shared/types';
+import type { SearchResult, LearnedIntent } from '../../shared/types';
 import { ICONS } from '../../shared/types';
 
 interface EmptyStateProps {
   items: SearchResult[];
+  recentIntents?: LearnedIntent[];
   onActivate: (i: number) => void;
   onSelect: (i: number) => void;
+  onSelectIntent?: (query: string) => void;
   selected: number;
 }
 
@@ -27,24 +29,55 @@ const ICON_CLASS: Record<string, string> = {
   command: 'icon-command', clipboard: 'icon-clip',
 };
 
-export function EmptyState({ items, onActivate, onSelect, selected }: EmptyStateProps) {
-  if (!items.length) {
+export function EmptyState({ items, recentIntents, onActivate, onSelect, onSelectIntent, selected }: EmptyStateProps) {
+  const hasIntents = Boolean(recentIntents && recentIntents.length > 0);
+  const hasItems = items.length > 0;
+
+  if (!hasItems && !hasIntents) {
     return (
       <div className="empty-state">
-        <div className="empty-icon">✨</div>
-        <p className="empty-title">Search apps, files, and commands</p>
-        <p className="empty-hint">
-          Try <span>@clip</span> · <span style={{ color: 'var(--accent-2)' }}>@emoji</span> · <span>120 × 4</span> · <span style={{ color: 'var(--accent-2)' }}>@ai</span>
-        </p>
+        <div className="empty-hero">
+          <div className="empty-icon">✧</div>
+          <p className="empty-title">Ready to search</p>
+          <p className="empty-hint">
+            Search apps, files, or use <span>@clip</span> · <span>@ai</span> · <span>120 * 4</span>
+          </p>
+        </div>
       </div>
     );
   }
 
   const groups = groupItems(items);
+
   return (
-    <div>
+    <div style={{ paddingBottom: 8 }}>
+      {hasIntents && (
+        <div style={{ marginBottom: 12 }}>
+          <div className="section-label">Learned Intents · Memory</div>
+          <div className="learned-intents-grid">
+            {recentIntents!.map((intent, idx) => (
+              <div
+                key={intent.query + idx}
+                className="intent-card"
+                onClick={() => onSelectIntent?.(intent.query)}
+                title={`Search "${intent.query}" (Target: ${intent.title})`}
+              >
+                <div className="row-icon icon-command" style={{ width: 26, height: 26, fontSize: 12 }}>
+                  <span>🎯</span>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="intent-query">{intent.query}</div>
+                  <div className="intent-target">{intent.title}</div>
+                </div>
+                <span className="type-badge badge-intent">INTENT</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {groups.map(([label, rows]) => (
-        <div key={label}>
+        <div key={label} style={{ marginBottom: 8 }}>
           <div className="section-label">{label}</div>
           {rows.map(({ item, index }) => {
             const isSel = selected === index;

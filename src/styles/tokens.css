@@ -1,22 +1,78 @@
 :root {
-  /* Dark solid background — no backdrop-filter conflict with Electron acrylic */
-  --bg: #0f0f13;
-  --bg-row: rgba(255, 255, 255, 0.04);
-  --bg-selected: rgba(110, 150, 255, 0.13);
-  --border: rgba(255, 255, 255, 0.08);
-  --border-top: rgba(110, 150, 255, 0.22);
+  /* ── Glass translucent dark theme (Windows 11 style) ── */
+  --glass-bg:        rgba(18, 22, 38, 0.82);
+  --glass-surface:   rgba(26, 32, 52, 0.78);
+  --glass-row:       rgba(255, 255, 255, 0.04);
+  --glass-hover:     rgba(255, 255, 255, 0.08);
+  --glass-selected:  rgba(255, 255, 255, 0.12);
+  --glass-card:      rgba(30, 38, 62, 0.80);
 
-  /* Accent */
-  --accent: #6e96ff;
-  --accent-2: #9f7aea;
-  --accent-soft: rgba(110, 150, 255, 0.15);
+  /* These aliases keep components working */
+  --bg:              var(--glass-bg);
+  --bg-surface:      var(--glass-surface);
+  --bg-row:          var(--glass-row);
+  --bg-hover:        var(--glass-hover);
+  --bg-selected:     var(--glass-selected);
+  --bg-panel:        rgba(14, 18, 30, 0.88);
 
-  /* Text */
-  --text-primary: #e8e8f0;
-  --text-secondary: rgba(232, 232, 240, 0.55);
-  --text-muted: rgba(232, 232, 240, 0.30);
+  /* Borders — subtle glass shimmer lines */
+  --border:          rgba(255, 255, 255, 0.10);
+  --border-subtle:   rgba(255, 255, 255, 0.06);
+  --border-selected: rgba(255, 255, 255, 0.20);
 
-  /* Radius / spacing */
-  --radius-row: 10px;
-  --radius-icon: 10px;
+  /* Accent — cool blue matching reference */
+  --accent:          #5b8dee;
+  --accent-hover:    #4a7de0;
+  --accent-subtle:   rgba(91, 141, 238, 0.15);
+  --accent-text:     #a8c4f8;
+  --accent-2:        #7db8e8;
+
+  /* Typography */
+  --text-primary:    rgba(255, 255, 255, 0.92);
+  --text-secondary:  rgba(255, 255, 255, 0.55);
+  --text-muted:      rgba(255, 255, 255, 0.38);
+  --text-dim:        rgba(255, 255, 255, 0.22);
+
+  /* Radii */
+  --radius-panel:    14px;
+  --radius-card:     10px;
+  --radius-pill:     9999px;
+  --radius-badge:    5px;
+  --radius-icon:     8px;
+
+  /* Shadows */
+  --shadow-card:     0 2px 12px rgba(0, 0, 0, 0.30);
+  --shadow-panel:    0 24px 80px rgba(0, 0, 0, 0.70), 0 0 0 1px rgba(255,255,255,0.08);
+
+  /* Blur — CSS backdrop filter for glass panels */
+  --blur-panel:      blur(40px) saturate(180%);
+  --blur-card:       blur(20px) saturate(160%);
+}
+
+[data-theme='light'] {
+  --glass-bg:        rgba(220, 228, 246, 0.80);
+  --glass-surface:   rgba(240, 244, 255, 0.82);
+  --glass-row:       rgba(0, 0, 0, 0.03);
+  --glass-hover:     rgba(0, 0, 0, 0.06);
+  --glass-selected:  rgba(91, 141, 238, 0.12);
+  --glass-card:      rgba(230, 238, 255, 0.75);
+
+  --bg:              var(--glass-bg);
+  --bg-surface:      var(--glass-surface);
+  --bg-row:          var(--glass-row);
+  --bg-hover:        var(--glass-hover);
+  --bg-selected:     var(--glass-selected);
+  --bg-panel:        rgba(210, 220, 240, 0.88);
+
+  --border:          rgba(100, 130, 200, 0.20);
+  --border-subtle:   rgba(100, 130, 200, 0.10);
+  --border-selected: rgba(91, 141, 238, 0.40);
+
+  --text-primary:    #0d1520;
+  --text-secondary:  #3a4560;
+  --text-muted:      #6b7a9a;
+  --text-dim:        #9aa4be;
+
+  --shadow-card:     0 2px 12px rgba(0, 0, 0, 0.08);
+  --shadow-panel:    0 20px 60px rgba(0, 0, 0, 0.18);
 }

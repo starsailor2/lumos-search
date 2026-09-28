@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('lumos', {
   getMeta: (p) => ipcRenderer.invoke('get-meta', p),
   openSettings: () => ipcRenderer.send('open-settings'),
   getAppearance: () => ipcRenderer.invoke('get-appearance'),
+  getRecentIntents: () => ipcRenderer.invoke('get-recent-intents'),
   onStatus: (cb) => ipcRenderer.on('index-status', (_e, s) => cb(s)),
   onShown: (cb) => ipcRenderer.on('window-shown', (_e, d) => cb(d)),
   onSetQuery: (cb) => ipcRenderer.on('set-query', (_e, q) => cb(q)),

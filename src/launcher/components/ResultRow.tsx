@@ -38,8 +38,8 @@ interface ResultRowProps {
 
 export function ResultRow({ item, index, selected, onSelect, onActivate, iconUrl }: ResultRowProps) {
   const iconCls = ICON_CLASS[item.type] ?? 'icon-default';
-  const badgeCls = BADGE_CLASS[item.type] ?? 'badge-default';
-  const label = TYPE_LABEL[item.type] ?? item.type.toUpperCase();
+  const badgeCls = item.isIntent ? 'badge-intent' : (BADGE_CLASS[item.type] ?? 'badge-default');
+  const label = item.isIntent ? 'INTENT' : (TYPE_LABEL[item.type] ?? item.type.toUpperCase());
 
   return (
     <div

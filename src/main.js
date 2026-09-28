@@ -6,6 +6,7 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { execSync } = require('child_process');
 const { Worker } = require('worker_threads');
 const { loadConfig, getConfig, updateConfig } = require('./config');
@@ -21,9 +22,10 @@ const { runSystemCommand } = require('./providers/system');
 const { focusWindow, snapWindow } = require('./providers/windows');
 const { killProcess } = require('./providers/process');
 const { chatCompletion } = require('./providers/ai');
+const { loadIntentMemory, recordIntent, getIntent, getRecentIntents } = require('./intent-memory');
 const PROVIDERS = require('./providers');
 
-const WINDOW_W = 780;
+const WINDOW_W = 740;
 const WINDOW_H = 560;
 const APP_ICON = path.join(__dirname, '..', 'public', 'icon.ico');
 const TEXT_PREVIEW_EXTS = new Set(['.txt', '.md', '.json', '.log', '.csv', '.js', '.ts', '.py', '.yml', '.yaml', '.xml', '.ini', '.cfg', '.conf']);
@@ -35,6 +37,7 @@ let config = null;
 let rebuildPending = false;
 let searchIndex = null;
 let lastIndexUpdate = Date.now();
+let lastSearchQuery = '';
 
 const idx = {
   paths: [],
@@ -44,6 +47,8 @@ const idx = {
   count: 0,
   status: 'starting',
 };
+
+const NOISE_PATH_REGEX = /[\\/](\.venv|venv|env|\.env|virtualenv|\.virtualenvs|\.conda|conda-env|site-packages|dist-packages|node_modules|bower_components|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.tox|\.nox|\.eggs|pip-wheel-metadata|\.git|\.next|\.nuxt|\.turbo|\.cargo|\.rustup|\.gradle|\.m2|\.nuget|obj|cmake-build-debug|cmake-build-release|\.vs|\.idea|ipch)[\\/]/i;
 
 function addEntryBigrams(map, name, i) {
   if (!name || name.length < 2) return;
@@ -63,15 +68,15 @@ function addEntryBigrams(map, name, i) {
 }
 
 function addEntries(items) {
-  const start = idx.paths.length;
   for (let i = 0; i < items.length; i++) {
     const [p, f] = items[i];
+    if (f !== 2 && NOISE_PATH_REGEX.test(p)) continue;
     idx.paths.push(p);
     const base = p.slice(Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')) + 1);
     const n = (f === 2 ? base.replace(/\.(lnk|url|appref-ms)$/i, '') : base).toLowerCase();
     idx.names.push(n);
     idx.flags.push(f);
-    addEntryBigrams(idx.bigrams, n, start + i);
+    addEntryBigrams(idx.bigrams, n, idx.paths.length - 1);
   }
   idx.count = idx.paths.length;
 }
@@ -103,6 +108,7 @@ function rebuildSearchIndex() {
 
 function search(query) {
   const raw = String(query || '').trim();
+  lastSearchQuery = raw;
   const scoped = parseScope(raw);
   const q = scoped.q;
   const isEmpty = q.length < 1 && !scoped.scope;
@@ -110,8 +116,15 @@ function search(query) {
   if (!isEmpty && q.length < 1 && scoped.scope) {
     // Scoped browse mode (@clip, @emoji, etc.)
   } else if (!isEmpty && q.length < 1) {
-    return { results: [], status: idx.status, indexed: idx.count };
+    return {
+      results: [],
+      status: idx.status,
+      indexed: idx.count,
+      recentIntents: getRecentIntents(6),
+    };
   }
+
+  const learnedIntent = getIntent(raw);
 
   const ctx = {
     q,
@@ -122,6 +135,7 @@ function search(query) {
     searchIndex,
     scope: scoped.scope,
     isEmpty: isEmpty || (scoped.scope && !q),
+    learnedIntent,
   };
 
   let providers = scoped.providers ? loadProviders(scoped.providers) : PROVIDERS;
@@ -132,6 +146,20 @@ function search(query) {
   for (const provider of providers) {
     try { all = all.concat(provider.search(ctx) || []); } catch (e) { console.error('provider error:', e); }
   }
+
+  // Apply learned intent boost (+450 points, guaranteed #1 surface)
+  if (learnedIntent) {
+    for (let j = 0; j < all.length; j++) {
+      const r = all[j];
+      const matchId = (r.id === learnedIntent.id);
+      const matchPath = (r.data && r.data.path && r.data.path === learnedIntent.path) || (r.subtitle === learnedIntent.path);
+      if (matchId || matchPath) {
+        r.score += 450;
+        r.isIntent = true;
+      }
+    }
+  }
+
   all.sort((a, b) => b.score - a.score);
 
   const results = [];
@@ -149,7 +177,14 @@ function search(query) {
     seen.add(r.id);
     results.push(r);
   }
-  return { results, status: idx.status, indexed: idx.count, matches: all.length, lastIndexUpdate };
+  return {
+    results,
+    status: idx.status,
+    indexed: idx.count,
+    matches: all.length,
+    lastIndexUpdate,
+    recentIntents: getRecentIntents(6),
+  };
 }
 
 const cacheFile = () => path.join(app.getPath('userData'), 'index-cache.txt');
@@ -159,18 +194,25 @@ function loadCache() {
     const raw = fs.readFileSync(cacheFile(), 'utf8');
     const lines = raw.split('\n');
     const items = [];
+    let hadNoise = false;
     for (const line of lines) {
       if (line.length < 3) continue;
       const tabIdx = line.indexOf('\t');
       if (tabIdx < 0) continue;
       const flagStr = line.slice(0, tabIdx);
       const filePath = line.slice(tabIdx + 1);
-      items.push([filePath, Number(flagStr) || 0]);
+      const flag = Number(flagStr) || 0;
+      if (flag !== 2 && NOISE_PATH_REGEX.test(filePath)) {
+        hadNoise = true;
+        continue;
+      }
+      items.push([filePath, flag]);
     }
     if (items.length) {
       addEntries(items);
       idx.status = 'ready';
       pushStatus();
+      if (hadNoise) saveCache(); // Rewrite cleaned cache without noise
     }
   } catch { /* no cache yet */ }
 }
@@ -389,7 +431,7 @@ function createWindow() {
     icon: APP_ICON,
     show: false,
     frame: false,
-    transparent: true,
+    transparent: false,
     resizable: false,
     movable: true,
     skipTaskbar: true,
@@ -403,8 +445,9 @@ function createWindow() {
     },
   };
   if (process.platform === 'win32') {
-    winOpts.backgroundMaterial = 'acrylic';
+    winOpts.backgroundMaterial = 'none';
     winOpts.roundedCorners = true;
+    winOpts.vibrancy = undefined;
   }
   win = new BrowserWindow(winOpts);
 
@@ -413,11 +456,7 @@ function createWindow() {
     win.loadURL(isDev);
   } else {
     const builtPath = path.join(__dirname, '..', 'dist', 'renderer', 'launcher', 'index.html');
-    if (fs.existsSync(builtPath)) {
-      win.loadFile(builtPath);
-    } else {
-      win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-    }
+    win.loadFile(builtPath);
   }
   win.on('blur', () => hideWindow());
   win.setAlwaysOnTop(true, 'screen-saver');
@@ -523,6 +562,11 @@ ipcMain.on('run-action', async (_e, payload) => {
   const { action, result } = payload;
   if (!KNOWN_ACTIONS.has(action) || !result || typeof result !== 'object') return;
   const data = result.data || {};
+
+  // Learn user intent for query
+  if (lastSearchQuery && (action === 'open' || action === 'reveal' || action === 'open-external' || action === 'copy')) {
+    recordIntent(lastSearchQuery, result);
+  }
 
   if (action === 'open' && typeof data.path === 'string') {
     shell.openPath(data.path);
@@ -676,6 +720,7 @@ ipcMain.handle('pick-folder', async () => {
 ipcMain.on('reset-frecency', () => resetFrecency());
 ipcMain.on('rebuild-index', () => startIndexing());
 ipcMain.on('clear-clipboard', () => clearHistory(getConfig));
+ipcMain.handle('get-recent-intents', () => getRecentIntents(8));
 
 const { completeOnboarding } = require('./providers/onboarding');
 const { loadAnalytics, recordSearch, recordOpen } = require('./analytics');
@@ -689,6 +734,7 @@ if (!gotLock) {
   app.whenReady().then(() => {
     config = loadConfig();
     loadFrecency();
+    loadIntentMemory();
     loadAnalytics();
     loadExtensions();
     bootstrapExtensions();

@@ -9,6 +9,16 @@ export interface SearchResult {
   data: Record<string, unknown>;
   matchRanges?: [number, number][];
   pin?: boolean;
+  isIntent?: boolean;
+}
+
+export interface LearnedIntent {
+  query: string;
+  title: string;
+  subtitle?: string;
+  path?: string;
+  type: string;
+  count?: number;
 }
 
 export interface SearchResponse {
@@ -17,6 +27,7 @@ export interface SearchResponse {
   indexed: number;
   matches?: number;
   lastIndexUpdate?: number;
+  recentIntents?: LearnedIntent[];
 }
 
 export interface Appearance {
@@ -35,6 +46,7 @@ export interface LumosAPI {
   getMeta: (path: string) => Promise<{ mtime: number; size: number } | null>;
   openSettings: () => void;
   getAppearance: () => Promise<Appearance>;
+  getRecentIntents: () => Promise<LearnedIntent[]>;
   onStatus: (cb: (s: { status: string; indexed: number; scanned?: number; lastIndexUpdate?: number }) => void) => void;
   onShown: (cb: (d?: { appearance?: Appearance }) => void) => void;
   onSetQuery: (cb: (q: string) => void) => void;

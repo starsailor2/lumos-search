@@ -15,14 +15,18 @@ export function DetailPanel({ preview, imageSrc, metaText }: DetailPanelProps) {
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: 'auto' }}
           exit={{ opacity: 0, height: 0 }}
-          className="border-t border-white/[0.07] px-[18px] py-2 max-h-[150px] overflow-y-auto text-[11.5px] text-white/55 whitespace-pre-wrap break-words bg-black/15"
+          className="detail-card"
         >
           {metaText && (
-            <div className="text-[10px] text-white/40 pb-1 mb-1.5 border-b border-white/[0.06] font-mono">
+            <div className="detail-meta-bar">
               {metaText}
             </div>
           )}
-          {imageSrc ? <img src={imageSrc} alt="" className="max-w-full max-h-[120px] rounded-md block" /> : preview}
+          {imageSrc ? (
+            <img src={imageSrc} alt="" className="detail-preview-img" />
+          ) : (
+            <div className="detail-preview-text">{preview}</div>
+          )}
         </motion.div>
       )}
     </AnimatePresence>

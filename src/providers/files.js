@@ -2,7 +2,8 @@
 // wrapped to emit the unified Result shape shared across all providers.
 //
 // Matching model:
-//   - Name tiers: exact > prefix > word-boundary > substring > fuzzy
+//   - Name tiers: exact > stem exact > prefix > word-boundary > substring > fuzzy
+//   - Noise barrier: strictly eliminates virtual envs, package folders, and build noise
 //   - Parent matching: a token that misses the name can match the folder the
 //     entry lives in, at a lower tier — so "lumos" surfaces files inside
 //     lumos-search, and "lumos main" pins it down to main.js.
@@ -11,6 +12,12 @@
 //   - Fast bigram prefilter: narrows candidate set on large indexes.
 
 const { computeMatchRanges } = require('../search-index');
+
+// Hard barrier: paths traversing virtual environments, package managers, and build artifacts
+const NOISE_PATH_REGEX = /[\\/](\.venv|venv|env|\.env|virtualenv|\.virtualenvs|\.conda|conda-env|site-packages|dist-packages|node_modules|bower_components|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.tox|\.nox|\.eggs|pip-wheel-metadata|\.git|\.next|\.nuxt|\.turbo|\.cargo|\.rustup|\.gradle|\.m2|\.nuget|obj|cmake-build-debug|cmake-build-release|\.vs|\.idea|ipch)[\\/]/i;
+
+// High-value user roots that receive a priority relevance boost
+const USER_ROOTS_REGEX = /[\\/](Desktop|Downloads|Documents|Pictures|Videos|Music)[\\/]/i;
 
 function isSubsequence(q, s) {
   let qi = 0;
@@ -25,6 +32,8 @@ function isSubsequence(q, s) {
 // ---------------------------------------------------------------------------
 function nameScore(name, q) {
   if (name === q) return 1000;
+  const dot = name.lastIndexOf('.');
+  if (dot > 0 && name.slice(0, dot) === q) return 980; // Stem exact match (e.g. "gate" for "gate.pdf")
   if (name.startsWith(q)) return 880 - Math.min(name.length - q.length, 80);
   const at = name.indexOf(q);
   if (at > 0) {
@@ -71,6 +80,11 @@ function parentScore(parentLower, q) {
 // Core scoring function for a single entry against query q.
 // ---------------------------------------------------------------------------
 function scoreEntry(idx, i, q, pathMode, frecencyBoost) {
+  const p = idx.paths[i];
+
+  // Hard barrier: noise directory rejection unless user is in explicit path navigation mode
+  if (!pathMode && NOISE_PATH_REGEX.test(p)) return -1;
+
   const name = idx.names[i];
   let s;
 
@@ -85,11 +99,11 @@ function scoreEntry(idx, i, q, pathMode, frecencyBoost) {
       if (tok.length > 32) return -1;
       let ts = nameScore(name, tok);
       if (ts < 0) {
-        if (parentLower === null) parentLower = parentOf(idx.paths[i]);
+        if (parentLower === null) parentLower = parentOf(p);
         const ps = parentScore(parentLower, tok);
         if (ps >= 0) {
           ts = Math.round(ps * 0.7); // name match beats folder match
-        } else if (pathMode && idx.paths[i].toLowerCase().includes(tok)) {
+        } else if (pathMode && p.toLowerCase().includes(tok)) {
           ts = 200;
         } else {
           return -1; // every token must match somewhere
@@ -102,9 +116,9 @@ function scoreEntry(idx, i, q, pathMode, frecencyBoost) {
     const tok = tokens && tokens.length === 1 ? tokens[0] : q;
     s = nameScore(name, tok);
     if (s < 0) {
-      const ps = parentScore(parentOf(idx.paths[i]), tok);
+      const ps = parentScore(parentOf(p), tok);
       if (ps >= 0) s = ps;
-      else if (pathMode && idx.paths[i].toLowerCase().includes(tok)) s = 300;
+      else if (pathMode && p.toLowerCase().includes(tok)) s = 300;
     }
   }
 
@@ -116,11 +130,18 @@ function scoreEntry(idx, i, q, pathMode, frecencyBoost) {
   else if (f === 1) s += 180;
   else if (f === 0) s += 150;
 
-  // Shallower paths are usually more relevant
-  const depth = (idx.paths[i].match(/[\\\/]/g) || []).length;
-  s -= Math.min(depth * 4, 60);
+  // High-value user location boost (Desktop, Downloads, Documents, Pictures, Videos, Music)
+  if (USER_ROOTS_REGEX.test(p)) {
+    s += 80;
+  }
 
-  if (frecencyBoost) s += frecencyBoost(idx.paths[i]);
+  // Progressive depth penalty: shallow root paths have 0 penalty; deep sub-paths are penalized
+  const depth = (p.match(/[\\\/]/g) || []).length;
+  if (depth > 4) {
+    s -= Math.min((depth - 4) * 12, 120);
+  }
+
+  if (frecencyBoost) s += frecencyBoost(p);
   return s;
 }
 
@@ -182,6 +203,14 @@ function getCandidates(idx, q, pathMode) {
       }
       if (!set.size) break;
     }
+
+    // Filter out candidates located in noise paths
+    for (const id of set) {
+      if (NOISE_PATH_REGEX.test(idx.paths[id])) {
+        set.delete(id);
+      }
+    }
+
     tokenCandidateSets.push(set);
   }
 
@@ -209,12 +238,14 @@ function search(ctx) {
 
   if (candidates && candidates.size > 0) {
     for (const i of candidates) {
+      if (!pathMode && NOISE_PATH_REGEX.test(idx.paths[i])) continue;
       const s = scoreEntry(idx, i, q, pathMode, frecencyBoost);
       if (s > 0) hits.push([s, i]);
     }
   } else if (!candidates) {
     const n = idx.count;
     for (let i = 0; i < n; i++) {
+      if (!pathMode && NOISE_PATH_REGEX.test(idx.paths[i])) continue;
       const s = scoreEntry(idx, i, q, pathMode, frecencyBoost);
       if (s > 0) hits.push([s, i]);
     }
@@ -241,4 +272,13 @@ function search(ctx) {
   return results;
 }
 
-module.exports = { search, scoreEntry, isSubsequence, nameScore, parentOf, parentScore };
+module.exports = {
+  search,
+  scoreEntry,
+  isSubsequence,
+  nameScore,
+  parentOf,
+  parentScore,
+  NOISE_PATH_REGEX,
+  USER_ROOTS_REGEX,
+};

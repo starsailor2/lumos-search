@@ -6,7 +6,7 @@ import { DetailPanel } from './components/DetailPanel';
 import { FooterHints } from './components/FooterHints';
 import { EmptyState } from './components/EmptyState';
 import { useLumos } from '../shared/hooks/useLumos';
-import type { SearchResult } from '../shared/types';
+import type { SearchResult, LearnedIntent } from '../shared/types';
 import '../styles/tokens.css';
 import './app.css';
 
@@ -52,6 +52,7 @@ export default function App() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<SearchResult[]>([]);
+  const [recentIntents, setRecentIntents] = useState<LearnedIntent[]>([]);
   const [sel, setSel] = useState(0);
   const [showActions, setShowActions] = useState(false);
   const [actionSel, setActionSel] = useState(0);
@@ -80,6 +81,11 @@ export default function App() {
       inputRef.current?.focus();
       inputRef.current?.select();
       doSearch('');
+      if (window.lumos.getRecentIntents) {
+        window.lumos.getRecentIntents().then((intents) => {
+          if (intents && intents.length) setRecentIntents(intents);
+        }).catch(() => {});
+      }
     });
     window.lumos.onSetQuery((q) => { setQuery(q); doSearch(q); });
     window.lumos.onAiResponse((d) => {
@@ -105,6 +111,7 @@ export default function App() {
     const res = await search(q);
     if (my !== queryId.current) return;
     setItems(res.results);
+    if (res.recentIntents) setRecentIntents(res.recentIntents);
     setSel(0);
     setShowActions(false);
     setActionSel(0);
@@ -212,6 +219,12 @@ export default function App() {
     ? fmtCount(indexStatus.indexed)
     : '…' + fmtCount(indexStatus.indexed);
 
+  const handleSelectIntent = (intentQuery: string) => {
+    setQuery(intentQuery);
+    doSearch(intentQuery);
+    inputRef.current?.focus();
+  };
+
   const current = items[sel];
   const secondary = current?.actions.find((a) => a !== current.actions[0]);
 
@@ -225,10 +238,40 @@ export default function App() {
         onSettings={() => window.lumos.openSettings()}
       />
 
-      <div className="results-scroll">
-        {showEmptyState && <EmptyState items={items} selected={sel} onSelect={setSel} onActivate={activate} />}
-        {showResults && <ResultList items={items} selected={sel} onSelect={setSel} onActivate={activate} iconCache={iconCache} />}
-        {isEmptyQuery && !items.length && <EmptyState items={[]} selected={0} onSelect={() => {}} onActivate={() => {}} />}
+      <div className="results-pane">
+        {showEmptyState && (
+          <div className="results-scroll">
+            <EmptyState
+              items={items}
+              recentIntents={recentIntents}
+              selected={sel}
+              onSelect={setSel}
+              onActivate={activate}
+              onSelectIntent={handleSelectIntent}
+            />
+          </div>
+        )}
+        {showResults && (
+          <ResultList
+            items={items}
+            selected={sel}
+            onSelect={setSel}
+            onActivate={activate}
+            iconCache={iconCache}
+          />
+        )}
+        {isEmptyQuery && !items.length && (
+          <div className="results-scroll">
+            <EmptyState
+              items={[]}
+              recentIntents={recentIntents}
+              selected={0}
+              onSelect={() => {}}
+              onActivate={() => {}}
+              onSelectIntent={handleSelectIntent}
+            />
+          </div>
+        )}
       </div>
 
       <ActionPanel
