@@ -25,8 +25,11 @@ const { chatCompletion } = require('./providers/ai');
 const { loadIntentMemory, recordIntent, getIntent, getRecentIntents } = require('./intent-memory');
 const PROVIDERS = require('./providers');
 
-const WINDOW_W = 740;
-const WINDOW_H = 560;
+const COMPACT_W = 600;
+const COMPACT_H = 60;
+const EXPANDED_W = 680;
+const EXPANDED_H = 490;
+let isWindowExpanded = false;
 const APP_ICON = path.join(__dirname, '..', 'public', 'icon.ico');
 const TEXT_PREVIEW_EXTS = new Set(['.txt', '.md', '.json', '.log', '.csv', '.js', '.ts', '.py', '.yml', '.yaml', '.xml', '.ini', '.cfg', '.conf']);
 
@@ -426,12 +429,14 @@ function pushStatus(scanned) {
 
 function createWindow() {
   const winOpts = {
-    width: WINDOW_W,
-    height: WINDOW_H,
+    width: COMPACT_W,
+    height: COMPACT_H,
     icon: APP_ICON,
     show: false,
     frame: false,
-    transparent: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
     resizable: false,
     movable: true,
     skipTaskbar: true,
@@ -445,9 +450,8 @@ function createWindow() {
     },
   };
   if (process.platform === 'win32') {
-    winOpts.backgroundMaterial = 'none';
+    winOpts.backgroundMaterial = 'acrylic';
     winOpts.roundedCorners = true;
-    winOpts.vibrancy = undefined;
   }
   win = new BrowserWindow(winOpts);
 
@@ -462,16 +466,18 @@ function createWindow() {
   win.setAlwaysOnTop(true, 'screen-saver');
 }
 
-function positionWindow() {
+function positionWindow(width = (isWindowExpanded ? EXPANDED_W : COMPACT_W), height = (isWindowExpanded ? EXPANDED_H : COMPACT_H)) {
+  if (!win || win.isDestroyed()) return;
   const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const x = Math.round(workArea.x + (workArea.width - WINDOW_W) / 2);
-  const y = Math.round(workArea.y + workArea.height * 0.16);
-  win.setPosition(x, y);
+  const x = Math.round(workArea.x + (workArea.width - width) / 2);
+  const y = Math.round(workArea.y + workArea.height * (isWindowExpanded ? 0.14 : 0.18));
+  win.setBounds({ x, y, width, height });
 }
 
 function showWindow() {
   captureForeground();
-  positionWindow();
+  isWindowExpanded = false;
+  positionWindow(COMPACT_W, COMPACT_H);
   win.show();
   win.focus();
   win.webContents.send('window-shown', { appearance: config.appearance });
@@ -653,6 +659,13 @@ ipcMain.on('run-action', async (_e, payload) => {
 
 ipcMain.on('hide-window', () => hideWindow());
 ipcMain.on('open-settings', () => createSettingsWindow());
+ipcMain.on('set-expanded', (_e, expanded) => {
+  if (!win || win.isDestroyed()) return;
+  isWindowExpanded = Boolean(expanded);
+  const w = isWindowExpanded ? EXPANDED_W : COMPACT_W;
+  const h = isWindowExpanded ? EXPANDED_H : COMPACT_H;
+  positionWindow(w, h);
+});
 
 ipcMain.handle('get-icon', (_e, payload) => {
   if (!payload || typeof payload.path !== 'string') return null;

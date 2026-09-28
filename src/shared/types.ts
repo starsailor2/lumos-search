@@ -47,6 +47,7 @@ export interface LumosAPI {
   openSettings: () => void;
   getAppearance: () => Promise<Appearance>;
   getRecentIntents: () => Promise<LearnedIntent[]>;
+  setExpanded: (expanded: boolean) => void;
   onStatus: (cb: (s: { status: string; indexed: number; scanned?: number; lastIndexUpdate?: number }) => void) => void;
   onShown: (cb: (d?: { appearance?: Appearance }) => void) => void;
   onSetQuery: (cb: (q: string) => void) => void;
