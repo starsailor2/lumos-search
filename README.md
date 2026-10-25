@@ -1,82 +1,186 @@
-# Lumos Search
+<h1 align="center">Lumos Search</h1>
 
-A desktop search launcher for Windows, built with Electron and React. Version 2.0.2 uses a dark monochrome pill with Aahar's DM Sans and Manrope typography, bundled for offline use. Results expand smoothly beneath the same input and resize to their content, without a sidebar or outer rectangular backdrop.
+<p align="center">
+  <strong>Apps, files, and everyday commands. One search bar.</strong><br>
+  A compact Windows launcher with a dark monochrome interface, local indexing,<br>
+  and results that expand smoothly beneath your search.
+</p>
 
-Press **Alt+,** (or **Alt+X**) anywhere to search apps, files, clipboard history, snippets, emoji, system commands, games, and more.
+<p align="center">
+  <kbd>Alt</kbd> + <kbd>,</kbd> to open · <kbd>Alt</kbd> + <kbd>X</kbd> also works<br>
+  <sub>v2.0.2 · Windows desktop · Electron + React</sub>
+</p>
 
-## Features
+<p align="center">
+  <a href="#see-it-in-action">See it in action</a> ·
+  <a href="#run-locally">Run locally</a> ·
+  <a href="#keyboard-controls">Keyboard controls</a> ·
+  <a href="https://github.com/starsailor2/lumos-search/releases">Releases</a>
+</p>
 
-### Core
-- **Global hotkey** — configurable with fallbacks
-- **Full-drive file index** — background worker with instant cache startup
-- **Responsive search** — cancellable search slices, cached folder scoring, and bounded results
-- **True paste** — restores focus and simulates Ctrl+V into the previous app
-- **Monochrome UI** — charcoal surfaces, gray dividers, local fonts, light/system theme options
-- **React launcher** — keyboard navigation, secondary action buttons, file previews, and match highlighting
+---
 
-### Raycast-style providers
-- `@files` / `@clip` / `@emoji` / `@system` / `@games` / `@process` / `@ai` scoped modes
-- **Quicklinks** — keyword URL bookmarks
-- **Clipboard history** — text + image, browse with `@clip`
-- **Snippets** — find by trigger in the launcher and paste into the previous app; browse with `@snippets`
-- **Calculator** — natural language (`120 x 4 - 28`)
-- **Unit conversion** — length, mass, volume, temperature, data
-- **Emoji picker** — search by name, copy to clipboard
-- **System commands** — lock, sleep, shutdown, volume, settings
-- **Window management** — snap, focus, list open windows
-- **Game launcher** — Steam + Epic Games libraries
-- **Process manager** — list and kill processes
-- **Quick AI** — BYOK OpenAI-compatible API
-- **Workflows** — multi-step command chains
+## See it in action
 
-### Premium extras
-- Favourites + recents empty-state UX
-- Extension plugin system with sample Lorem Ipsum extension
-- Path intelligence (`cd ~/projects`)
-- Batch path copy
-- Local search analytics
-- Auto-update (electron-updater, packaged builds)
-- Onboarding welcome on first run
+These are real, unedited captures of the running Windows app. The examples use sample documents in an isolated profile; the results, calculator output, and file preview are produced by Lumos itself.
+
+### 01 — A small place to start
+
+Press your global shortcut to bring up the pill. Start typing without opening a separate search page.
+
+<p align="center">
+  <img src="docs/screenshots/01-compact.png" alt="Lumos in its normal compact state: a dark pill-shaped search bar with transparent corners and a Ctrl K hint" width="750">
+</p>
+
+### 02 — Results expand beneath your query
+
+Type a word such as `project`. Matching documents appear directly below the same input. The panel grows to fit the results, keeps its top edge in place, and scrolls when the list gets longer.
+
+<p align="center">
+  <img src="docs/screenshots/02-expanded.png" alt="Expanded Lumos search showing Project Brief, Project Budget, and Project Roadmap results, with Open, Show in Explorer, and Preview actions" width="750">
+</p>
+
+### 03 — Find a file. Check its contents.
+
+Use `@files release notes` to narrow the search to files, then choose **Preview**. Read a text preview, open the document, or reveal it in Explorer from the same panel.
+
+<p align="center">
+  <img src="docs/screenshots/03-file-preview.png" alt="Lumos finding Release Notes.md and displaying its real text contents in the built-in preview beneath the result" width="750">
+</p>
+
+### 04 — Calculate while you search
+
+Enter `120 x 4 - 28` and Lumos returns **452**. Choose **Copy** to use the answer elsewhere. Unit conversions such as `5 km to mi` work from the same input.
+
+<p align="center">
+  <img src="docs/screenshots/04-calculator.png" alt="Lumos calculating 120 times 4 minus 28, displaying the answer 452 and a Copy action" width="750">
+</p>
+
+## What you can do
+
+| Task | Built into the launcher |
+| --- | --- |
+| Find your work | Search indexed apps, files, and folders; preview supported text files; open or reveal results. |
+| Handle small tasks | Calculate, convert units, find emoji, and paste saved snippets. |
+| Pick up where you left off | Browse clipboard history, favourites, and recent launches. |
+| Reach the web | Open keyword quicklinks or send a query to your configured search engine. |
+| Control your workspace | Find open windows, snap a window, browse processes, and run system commands. |
+| Launch and automate | Find Steam/Epic library entries and run configured workflows. |
+| Ask or extend | Configure your own AI endpoint and key, or add local search extensions. |
+
+The file index refreshes in the background. Cached startup results, cancellable searches, and bounded result lists help keep the launcher responsive while indexing continues. Typography uses bundled **DM Sans** and **Manrope**, so fonts load offline.
+
+## Run locally
+
+**Requirements:** Windows, Git, and Node.js **22.12 or newer** with npm.
+
+```powershell
+git clone https://github.com/starsailor2/lumos-search.git
+cd lumos-search
+npm ci
+npm start
+```
+
+`npm start` builds the React interface and starts Electron. Lumos runs in the system tray; use **Alt+,** or **Alt+X** to open it. If a shortcut is already registered by another app, Lumos tries its configured fallbacks. The tray also provides **Show search**, **Settings**, and **Quit**.
+
+### Build a Windows installer
+
+```powershell
+npm run dist
+```
+
+The installer is written to `release/`. Generated installers are not committed to the repository. Published builds, when available, are listed on the [Releases page](https://github.com/starsailor2/lumos-search/releases). Local builds are unsigned unless a signing certificate is configured.
+
+## Keyboard controls
+
+| Key | Action |
+| --- | --- |
+| **Alt+,** / **Alt+X** | Show or hide Lumos globally. |
+| **Type** | Search and expand matching results beneath the pill. |
+| **Ctrl+K** | Toggle the suggestions panel. |
+| **↑ / ↓** | Move through results. |
+| **Enter** | Run the selected result's primary action. |
+| **Shift+Enter** | Run its secondary action, when available. |
+| **Tab / Shift+Tab** | Move between available buttons. |
+| **Escape** | Clear the query and collapse results; press again to hide the launcher. |
+
+Clearing the input returns the launcher to its compact pill. The input stays in place during expansion and collapse. Reduced-motion preferences and the animation setting are respected.
+
+## One input, optional search modes
+
+Search normally to combine providers, or type an `@` prefix to focus on a particular kind of result.
+
+| Mode | Example |
+| --- | --- |
+| Apps, files, folders | `@apps code` · `@files release notes` · `@folders projects` |
+| Clipboard and snippets | `@clip` · `@snippets` |
+| Emoji | `@emoji happy` |
+| Calculator and units | `@calc 120 x 4 - 28` · `@convert 5 km to mi` |
+| Quicklinks and web | `@links` · `@web documentation` |
+| Recent items and favourites | `@recent` · `@fav` |
+| Windows and processes | `@windows` · `@process` |
+| System commands and games | `@system` · `@games` |
+| Workflows and AI | `@workflows` · `@ai explain recursion` |
+
+AI is optional and disabled by default. Configure its endpoint, model, and API key in **Settings** before using it.
+
+## Settings and local data
+
+Open **Settings** from the tray or the expanded panel's footer. Configure hotkeys, indexed folders and exclusions, result limits, appearance, clipboard retention, snippets, quicklinks, and AI.
+
+- The file index, configuration, and usage data are stored locally in Electron's user-data directory.
+- Clipboard history can be disabled or cleared. Keeping it across restarts is configurable.
+- Web search opens your browser when you choose that action. AI requests go to the endpoint you configure.
+- Local extensions run in separate workers with deadlines and memory limits. Install extensions you trust.
+
+See [the audit and verification notes](AUDIT.md) for tested behavior and the remaining native-integration checks.
 
 ## Development
 
+| Command | Purpose |
+| --- | --- |
+| `npm run build` | Build the React launcher. |
+| `npm run dev` | Rebuild the UI when source files change. |
+| `npm start` | Build and run Electron. |
+| `npm test` | Run regression tests. |
+| `npm run typecheck` | Check TypeScript types. |
+| `npm run test:smoke` | Exercise the app through native Electron input with an isolated profile. |
+| `npm run test:benchmark` | Run synthetic searches against 100,000 and one million entries. |
+| `npm run dist` | Build the Windows installer. |
+
+<details>
+<summary><strong>Project layout</strong></summary>
+
+```text
+src/main.js                 Electron lifecycle, IPC, indexing, and actions
+src/indexer.js              Background file crawler
+src/providers/              File, clipboard, calculator, and command providers
+src/launcher/               React search interface
+src/shared/                 Renderer types and hooks
+src/styles/                 Theme tokens and bundled font declarations
+src/assets/fonts/           Local fonts and their licenses
+extensions/sample-lorem/    Example extension
+scripts/capture-readme.cjs  Real-app screenshot capture
+docs/screenshots/           The four screenshots shown above
+tests/                      Regression, smoke, benchmark, and package checks
+```
+
+</details>
+
+<details>
+<summary><strong>Refresh the README screenshots</strong></summary>
+
+After installing dependencies:
+
 ```powershell
-npm install
-npm run build    # build React launcher
-npm start        # run Electron
-npm run dist     # build + Windows installer
-npm test         # regression tests
-npm run typecheck
-npm run test:smoke      # isolated Electron UI and integration checks
-npm run test:benchmark  # synthetic 100k / 1m entry search benchmark
+npm run build
+npx electron scripts/capture-readme.cjs
 ```
 
-The app loads the React build from `dist/renderer/launcher/`. Build before launching Electron directly. The smoke test uses a temporary profile and fixture directory; it does not change your normal settings or clipboard history.
+The capture script opens the real launcher, types the example searches, checks the results, and saves four PNGs in `docs/screenshots/`. It uses an isolated temporary profile, disables clipboard capture for that profile, and creates sample documents under the ignored `test-output/readme-demo/` directory.
 
-Type to open matching results beneath the pill. Clearing the input collapses it. Use **Ctrl+K** to toggle suggestions, **Up/Down** to select, **Enter** for the primary action, and **Shift+Enter** for the secondary action. Tab moves through buttons. Escape clears the query and collapses the results, then hides the launcher. All search types share this input; optional `@files`, `@emoji`, `@clip`, and other scopes remain available.
+</details>
 
-## Project structure
+## License
 
-```
-lumos-search/
-├── src/
-│   ├── main.js              # Electron main process
-│   ├── search-index.js      # Match highlighting
-│   ├── paste.js             # True paste via PowerShell
-│   ├── extensions.js        # Plugin loader
-│   ├── analytics.js         # Local search analytics
-│   ├── providers/           # Search providers
-│   ├── launcher/            # React UI (Vite)
-│   ├── shared/              # Types and hooks
-│   └── styles/tokens.css    # Design tokens
-├── extensions/sample-lorem/ # Sample plugin
-└── dist/renderer/launcher/  # Built UI
-```
-
-## Settings
-
-Open via tray → Settings, or the Settings button in the expanded launcher's footer.
-
-Configure hotkeys, appearance (theme/accent/glass blur), indexing, quicklinks, clipboard, snippets, AI, and more.
-
-See [AUDIT.md](AUDIT.md) for the 2.0.1 audit, fixes, verification, and integration limits.
+[MIT](package.json). Bundled DM Sans and Manrope fonts include their [SIL Open Font License notices](src/assets/fonts/).
