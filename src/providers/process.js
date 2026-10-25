@@ -1,26 +1,14 @@
 // Process manager — list and kill running processes.
 
-const { execSync } = require('child_process');
+const { execFile } = require('child_process');
+const { cachedSnapshot } = require('../powershell');
 
-function listProcesses() {
-  if (process.platform !== 'win32') return [];
-  try {
-    const ps = 'Get-Process | Sort-Object CPU -Descending | Select-Object -First 80 Id, ProcessName, CPU, WorkingSet | ConvertTo-Json -Compress';
-    const out = execSync(`powershell -NoProfile -Command "${ps}"`, { encoding: 'utf8', windowsHide: true });
-    const parsed = JSON.parse(out || '[]');
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch {
-    return [];
-  }
-}
+const listProcesses = cachedSnapshot('Get-Process | Sort-Object CPU -Descending | Select-Object Id, ProcessName, CPU, WorkingSet | ConvertTo-Json -Compress');
 
 function killProcess(pid) {
-  try {
-    execSync(`taskkill /PID ${pid} /F`, { windowsHide: true });
-    return true;
-  } catch {
-    return false;
-  }
+  if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid) return Promise.resolve(false);
+  return new Promise((resolve) => execFile('taskkill.exe', ['/PID', String(pid), '/F'],
+    { windowsHide: true, timeout: 5000 }, (error) => resolve(!error)));
 }
 
 function formatMem(bytes) {
@@ -28,9 +16,10 @@ function formatMem(bytes) {
   return mb + ' MB';
 }
 
-function search(ctx) {
+async function search(ctx) {
+  if (!['process', 'processes', 'proc'].includes(ctx.scope)) return [];
   const { q, qLower } = ctx;
-  const procs = listProcesses();
+  const procs = await listProcesses();
   const results = [];
   for (const p of procs) {
     if (!p || !p.ProcessName) continue;

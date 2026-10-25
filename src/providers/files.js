@@ -9,7 +9,7 @@
 //     lumos-search, and "lumos main" pins it down to main.js.
 //   - Multi-token: every whitespace-separated token must match the name or
 //     the parent path. Scores add up, so more matched tokens rank higher.
-//   - Fast bigram prefilter: narrows candidate set on large indexes.
+//   - Cancellable search slices and bounded result collection keep typing responsive.
 
 const { computeMatchRanges } = require('../search-index');
 
@@ -20,11 +20,12 @@ const NOISE_PATH_REGEX = /[\\/](\.venv|venv|env|\.env|virtualenv|\.virtualenvs|\
 const USER_ROOTS_REGEX = /[\\/](Desktop|Downloads|Documents|Pictures|Videos|Music)[\\/]/i;
 
 function isSubsequence(q, s) {
-  let qi = 0;
-  for (let si = 0; si < s.length && qi < q.length; si++) {
-    if (s.charCodeAt(si) === q.charCodeAt(qi)) qi++;
+  let at = -1;
+  for (const character of q) {
+    at = s.indexOf(character, at + 1);
+    if (at < 0) return false;
   }
-  return qi === q.length;
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,16 +80,16 @@ function parentScore(parentLower, q) {
 // ---------------------------------------------------------------------------
 // Core scoring function for a single entry against query q.
 // ---------------------------------------------------------------------------
-function scoreEntry(idx, i, q, pathMode, frecencyBoost) {
+function scoreEntry(idx, i, q, pathMode, frecencyBoost, queryTokens, allowNoise = false, cachedParentScore) {
   const p = idx.paths[i];
 
   // Hard barrier: noise directory rejection unless user is in explicit path navigation mode
-  if (!pathMode && NOISE_PATH_REGEX.test(p)) return -1;
+  if (!idx.filtered && !allowNoise && idx.flags[i] !== 2 && !pathMode && NOISE_PATH_REGEX.test(p)) return -1;
 
   const name = idx.names[i];
   let s;
 
-  const tokens = (q.indexOf(' ') >= 0) ? q.split(/\s+/).filter(Boolean).slice(0, 8) : null;
+  const tokens = queryTokens || ((q.indexOf(' ') >= 0) ? q.split(/\s+/).filter(Boolean) : null);
 
   if (tokens && tokens.length > 1) {
     // Multi-token: every token must match the name or the parent path.
@@ -96,11 +97,10 @@ function scoreEntry(idx, i, q, pathMode, frecencyBoost) {
     let total = 0;
     for (let t = 0; t < tokens.length; t++) {
       const tok = tokens[t];
-      if (tok.length > 32) return -1;
       let ts = nameScore(name, tok);
       if (ts < 0) {
-        if (parentLower === null) parentLower = parentOf(p);
-        const ps = parentScore(parentLower, tok);
+        if (!cachedParentScore && parentLower === null) parentLower = parentOf(p);
+        const ps = cachedParentScore ? cachedParentScore(i, tok) : parentScore(parentLower, tok);
         if (ps >= 0) {
           ts = Math.round(ps * 0.7); // name match beats folder match
         } else if (pathMode && p.toLowerCase().includes(tok)) {
@@ -116,7 +116,7 @@ function scoreEntry(idx, i, q, pathMode, frecencyBoost) {
     const tok = tokens && tokens.length === 1 ? tokens[0] : q;
     s = nameScore(name, tok);
     if (s < 0) {
-      const ps = parentScore(parentOf(p), tok);
+      const ps = cachedParentScore ? cachedParentScore(i, tok) : parentScore(parentOf(p), tok);
       if (ps >= 0) s = ps;
       else if (pathMode && p.toLowerCase().includes(tok)) s = 300;
     }
@@ -156,104 +156,54 @@ function displayTitle(idx, i) {
     const base = p.slice(Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')) + 1);
     return base.replace(/\.(lnk|url|appref-ms)$/i, '');
   }
-  return idx.names[i];
+  return p.slice(Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')) + 1);
 }
 
-// ---------------------------------------------------------------------------
-// Bigram prefilter: selects candidate entry indices using idx.bigrams.
-// Falls back to null (triggering full scan) if the index is missing or any
-// needed bigram is absent.
-// ---------------------------------------------------------------------------
-function getCandidates(idx, q, pathMode) {
-  if (!idx.bigrams || pathMode) return null;
-  const tokens = q.split(/\s+/).filter(Boolean);
-  if (!tokens.length) return null;
+let searchGeneration = 0;
 
-  // Select candidates for each token of length >= 2
-  const tokenCandidateSets = [];
-  for (const token of tokens) {
-    if (token.length < 2) continue;
-    const bgs = [];
-    for (let j = 0; j < token.length - 1; j++) {
-      bgs.push(token.slice(j, j + 2));
-    }
-    let allExist = true;
-    const lists = [];
-    for (const bg of bgs) {
-      const list = idx.bigrams.get(bg);
-      if (!list || !list.length) {
-        allExist = false;
-        break;
-      }
-      lists.push(list);
-    }
-    if (!allExist) {
-      // If any needed bigram is absent in the index, fall back to full scan
-      return null;
-    }
-
-    // Intersect the 3 rarest bigrams of the token
-    lists.sort((a, b) => a.length - b.length);
-    const rarest = lists.slice(0, 3);
-    let set = new Set(rarest[0]);
-    for (let k = 1; k < rarest.length; k++) {
-      const next = new Set(rarest[k]);
-      for (const id of set) {
-        if (!next.has(id)) set.delete(id);
-      }
-      if (!set.size) break;
-    }
-
-    // Filter out candidates located in noise paths
-    for (const id of set) {
-      if (NOISE_PATH_REGEX.test(idx.paths[id])) {
-        set.delete(id);
-      }
-    }
-
-    tokenCandidateSets.push(set);
-  }
-
-  if (!tokenCandidateSets.length) return null;
-
-  if (tokenCandidateSets.length === 1) {
-    return tokenCandidateSets[0];
-  }
-
-  // Multi-token: union candidates so entries matching any token's name are included
-  const union = new Set();
-  for (const s of tokenCandidateSets) {
-    for (const id of s) union.add(id);
-  }
-  return union;
-}
-
-function search(ctx) {
-  const { idx, qLower: q, frecencyBoost } = ctx;
-  if (!q || q.length < 1) return [];
+async function search(ctx) {
+  // Snapshot arrays so a completed background refresh cannot mix two indexes.
+  const idx = { ...ctx.idx };
+  const { qLower: q, frecencyBoost } = ctx;
+  const browse = ['apps', 'app', 'files', 'file', 'folders', 'folder'].includes(ctx.scope);
+  if (!q && !browse) return [];
+  const generation = ++searchGeneration;
   const pathMode = q.includes('\\') || q.includes('/');
   const hits = [];
+  const tokens = q.split(/\s+/).filter(Boolean);
+  const limit = ctx.config?.maxResults || 40;
+  const scopeFlag = ['apps', 'app'].includes(ctx.scope) ? 2 : ['folders', 'folder'].includes(ctx.scope) ? 1 : ['files', 'file'].includes(ctx.scope) ? 0 : null;
+  const parentScores = new Map();
+  const cachedParentScore = (i, token) => {
+    const parent = idx.parents?.[i] ?? parentOf(idx.paths[i]);
+    let scores = parentScores.get(parent);
+    if (!scores) { scores = new Map(); parentScores.set(parent, scores); }
+    if (!scores.has(token)) scores.set(token, parentScore(parent, token));
+    return scores.get(token);
+  };
 
-  const candidates = getCandidates(idx, q, pathMode);
-
-  if (candidates && candidates.size > 0) {
-    for (const i of candidates) {
-      if (!pathMode && NOISE_PATH_REGEX.test(idx.paths[i])) continue;
-      const s = scoreEntry(idx, i, q, pathMode, frecencyBoost);
-      if (s > 0) hits.push([s, i]);
+  // Name-only bigrams omit valid ancestor and fuzzy matches. Scan in short,
+  // cancellable slices and keep only the best results, with bounded memory.
+  for (let start = 0; start < idx.count; start += 1000) {
+    if (generation !== searchGeneration) return [];
+    for (let i = start; i < Math.min(start + 1000, idx.count); i++) {
+      if (scopeFlag !== null && idx.flags[i] !== scopeFlag) continue;
+      const baseScore = q ? scoreEntry(idx, i, q, pathMode, frecencyBoost, tokens, Boolean(ctx.config?.skipDirs?.length), cachedParentScore) :
+        (idx.flags[i] === 2 ? 640 : 300) + (frecencyBoost?.(idx.paths[i]) || 0);
+      if (baseScore <= 0) continue;
+      const s = baseScore + ((ctx.learnedIntent?.id === idx.paths[i] || ctx.learnedIntent?.path === idx.paths[i]) ? 450 : 0);
+      if (s <= 0 || (hits.length === limit && s <= hits[hits.length - 1][0])) continue;
+      let at = hits.length;
+      while (at > 0 && hits[at - 1][0] < s) at--;
+      hits.splice(at, 0, [s, i, baseScore]);
+      if (hits.length > limit) hits.pop();
     }
-  } else if (!candidates) {
-    const n = idx.count;
-    for (let i = 0; i < n; i++) {
-      if (!pathMode && NOISE_PATH_REGEX.test(idx.paths[i])) continue;
-      const s = scoreEntry(idx, i, q, pathMode, frecencyBoost);
-      if (s > 0) hits.push([s, i]);
-    }
+    if (start + 1000 < idx.count) await new Promise((resolve) => setImmediate(resolve));
   }
 
   const results = [];
   for (let k = 0; k < hits.length; k++) {
-    const [s, i] = hits[k];
+    const [, i, s] = hits[k];
     const p = idx.paths[i];
     const kind = kindOf(idx.flags[i]);
     const title = displayTitle(idx, i);

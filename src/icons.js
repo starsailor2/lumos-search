@@ -56,10 +56,8 @@ async function getIcon(filePath, kind) {
       return dataUrl;
     } catch {
       return null;
-    } finally {
-      inFlight.delete(key);
     }
-  })();
+  })().finally(() => { inFlight.delete(key); });
 
   inFlight.set(key, promise);
   return promise;

@@ -9,7 +9,7 @@ function basename(p) {
 function search(ctx) {
   const { q, config, idx } = ctx;
   const isEmpty = !q || q.length < 1;
-  const isRecentScope = ctx.scope === 'recent' || ctx.scope === 'fav' || ctx.scope === 'favourites' || ctx.scope === 'favorites';
+  const isRecentScope = ['recent', 'recents', 'fav', 'favourites', 'favorites'].includes(ctx.scope);
   if (!isEmpty && !isRecentScope) return [];
 
   const results = [];
@@ -33,7 +33,7 @@ function search(ctx) {
     });
   }
 
-  const recents = getTopRecents(8);
+  const recents = ['fav', 'favourites', 'favorites'].includes(ctx.scope) ? [] : getTopRecents(8);
   for (let i = 0; i < recents.length; i++) {
     const { path: p, score } = recents[i];
     const title = basename(p);

@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const { app, clipboard } = require('electron');
 const { writeAtomic } = require('../config');
+const crypto = require('crypto');
 
 const POLL_MS = 800;
 
@@ -19,7 +20,7 @@ let history = []; // [{ id, text, ts }], newest first
 let lastSeen = '';
 let pollTimer = null;
 let saveTimer = null;
-let enabledCache = true;
+let currentClipboardConfig = null;
 
 function historyPath() {
   return path.join(app.getPath('userData'), 'clipboard-history.json');
@@ -28,11 +29,14 @@ function historyPath() {
 function loadHistory() {
   try {
     const raw = JSON.parse(fs.readFileSync(historyPath(), 'utf8'));
-    if (Array.isArray(raw && raw.entries)) history = raw.entries;
+    if (Array.isArray(raw && raw.entries)) history = raw.entries
+      .filter((e) => e && typeof e.id === 'string' && typeof e.text === 'string' && Number.isFinite(e.ts))
+      .slice(0, currentClipboardConfig.maxEntries);
   } catch { /* no history yet */ }
 }
 
 function saveHistoryNow() {
+  if (!currentClipboardConfig?.retainAcrossRestarts) return;
   try { writeAtomic(historyPath(), JSON.stringify({ version: 1, entries: history }, null, 2)); } catch { /* non-fatal */ }
 }
 
@@ -47,6 +51,7 @@ function clearPersistedHistory() {
 
 function pollClipboard(getConfig) {
   const cfg = getConfig().clipboard;
+  currentClipboardConfig = cfg;
   if (!cfg.enabled) return;
   let text;
   try { text = clipboard.readText(); } catch { /* ignore */ }
@@ -56,11 +61,13 @@ function pollClipboard(getConfig) {
     addEntry(text, 'text', cfg);
     return;
   }
+  if (text) return;
   try {
     const img = clipboard.readImage();
     if (img && !img.isEmpty()) {
       const dataUrl = img.toDataURL();
-      const imgKey = 'img:' + dataUrl.slice(0, 64);
+      if (dataUrl.length > 8_000_000) return;
+      const imgKey = 'img:' + crypto.createHash('sha256').update(dataUrl).digest('hex');
       if (imgKey !== lastSeen) {
         lastSeen = imgKey;
         addEntry(dataUrl, 'image', cfg);
@@ -94,15 +101,21 @@ function addEntry(content, kind, cfg) {
 }
 
 function startClipboardWatch(getConfig) {
-  loadHistory();
   if (pollTimer) return;
+  currentClipboardConfig = getConfig().clipboard;
+  if (currentClipboardConfig.retainAcrossRestarts) loadHistory();
+  else clearPersistedHistory();
   pollTimer = setInterval(() => pollClipboard(getConfig), POLL_MS);
 }
 
 // If the user disables retention, drop whatever was persisted so it doesn't
 // linger on disk after the user opted out.
 function applyRetentionChange(cfg) {
+  currentClipboardConfig = cfg.clipboard;
+  history = history.slice(0, cfg.clipboard.maxEntries);
+  clearTimeout(saveTimer);
   if (!cfg.clipboard.retainAcrossRestarts) clearPersistedHistory();
+  else saveHistoryDebounced();
 }
 
 function firstLine(text) {
@@ -125,13 +138,14 @@ function search(ctx) {
   const results = [];
   const isBrowse = !q || q.length < 1;
   const isClipScope = ctx.scope === 'clip' || ctx.scope === 'clipboard';
+  const isSnippetScope = ['snip', 'snippet', 'snippets'].includes(ctx.scope);
 
-  if (config.clipboard.enabled && (isBrowse || isClipScope || q)) {
+  if (!isSnippetScope && config.clipboard.enabled && (isBrowse || isClipScope || q)) {
     for (let i = 0; i < history.length; i++) {
       const entry = history[i];
       const textLower = entry.text.toLowerCase();
       let score = -1;
-      if (isBrowse || isClipScope) {
+      if (isBrowse) {
         score = 200 - i * 2;
       } else if (textLower.includes(qLower)) {
         score = 250 + Math.max(0, 30 - i);
@@ -151,8 +165,8 @@ function search(ctx) {
   }
 
   for (const snip of config.snippets) {
-    if (isBrowse) continue;
-    if (snip.trigger.toLowerCase().startsWith(qLower) || qLower.startsWith(snip.trigger.toLowerCase())) {
+    if (isClipScope || !snip.trigger.trim()) continue;
+    if ((isBrowse && isSnippetScope) || (!isBrowse && (snip.trigger.toLowerCase().startsWith(qLower) || qLower.startsWith(snip.trigger.toLowerCase())))) {
       results.push({
         type: 'snippet',
         id: 'snippet:' + snip.id,
@@ -174,10 +188,16 @@ function getHistory() {
 }
 
 function clearHistory(getConfig) {
+  clearTimeout(saveTimer);
   history = [];
-  lastSeen = '';
-  const cfg = getConfig().clipboard;
-  if (cfg.retainAcrossRestarts) clearPersistedHistory();
+  try {
+    lastSeen = clipboard.readText();
+    if (!lastSeen) {
+      const image = clipboard.readImage();
+      if (!image.isEmpty()) lastSeen = 'img:' + crypto.createHash('sha256').update(image.toDataURL()).digest('hex');
+    }
+  } catch { lastSeen = ''; }
+  clearPersistedHistory();
 }
 
 module.exports = { search, startClipboardWatch, applyRetentionChange, clearPersistedHistory, getHistory, clearHistory };

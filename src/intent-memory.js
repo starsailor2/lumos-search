@@ -25,10 +25,11 @@ function memoryPath() {
 function loadIntentMemory() {
   try {
     const raw = JSON.parse(fs.readFileSync(memoryPath(), 'utf8'));
-    if (raw && typeof raw.queries === 'object') {
+    if (raw && raw.queries && typeof raw.queries === 'object') {
       memory = {
         version: 1,
-        queries: raw.queries,
+        queries: Object.fromEntries(Object.entries(raw.queries).filter(([, e]) =>
+          e && typeof e.id === 'string' && Number.isFinite(e.lastUsed)).slice(-MAX_LEARNED_QUERIES)),
       };
     }
   } catch {
@@ -57,18 +58,18 @@ function recordIntent(rawQuery, result) {
   const q = normalizeQuery(rawQuery);
   if (!q || q.length < 2 || !result || !result.id) return;
 
-  const prev = memory.queries[q];
+  const prev = Object.hasOwn(memory.queries, q) ? memory.queries[q] : null;
   const count = (prev && prev.count ? prev.count : 0) + 1;
   const targetPath = (result.data && typeof result.data.path === 'string') ? result.data.path : result.id;
 
-  memory.queries[q] = {
+  Object.defineProperty(memory.queries, q, { enumerable: true, configurable: true, writable: true, value: {
     id: result.id,
     path: targetPath,
     title: result.title || '',
     type: result.type || 'file',
     count,
     lastUsed: Date.now(),
-  };
+  } });
 
   // Bound memory size (LRU eviction if exceeds limit)
   const keys = Object.keys(memory.queries);
@@ -87,7 +88,7 @@ function getIntent(rawQuery) {
   if (!q || q.length < 2) return null;
 
   // 1. Exact query match
-  const exact = memory.queries[q];
+  const exact = Object.hasOwn(memory.queries, q) ? memory.queries[q] : null;
   if (exact) return exact;
 
   // 2. Prefix intent check (e.g. user typed "gat" and previously chose for "gate")
@@ -121,10 +122,13 @@ function clearIntentMemory() {
   saveMemoryDebounced();
 }
 
+function flushIntentMemory() { clearTimeout(saveTimer); saveMemoryNow(); }
+
 module.exports = {
   loadIntentMemory,
   recordIntent,
   getIntent,
   getRecentIntents,
   clearIntentMemory,
+  flushIntentMemory,
 };

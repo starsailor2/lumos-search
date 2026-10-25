@@ -29,7 +29,7 @@ function search(ctx) {
           subtitle: 'Navigate · ' + p,
           score: 750,
           icon: '📂',
-          actions: ['reveal'],
+          actions: ['open', 'reveal'],
           data: { path: p, kind: 'folder' },
         });
         if (results.length >= 5) break;

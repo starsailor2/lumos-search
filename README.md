@@ -1,6 +1,6 @@
 # Lumos Search
 
-A premium Raycast-class global search launcher for Windows, built with Electron and React.
+A desktop search launcher for Windows, built with Electron and React. Version 2.0.2 uses a dark monochrome pill with Aahar's DM Sans and Manrope typography, bundled for offline use. Results expand smoothly beneath the same input and resize to their content, without a sidebar or outer rectangular backdrop.
 
 Press **Alt+,** (or **Alt+X**) anywhere to search apps, files, clipboard history, snippets, emoji, system commands, games, and more.
 
@@ -9,16 +9,16 @@ Press **Alt+,** (or **Alt+X**) anywhere to search apps, files, clipboard history
 ### Core
 - **Global hotkey** — configurable with fallbacks
 - **Full-drive file index** — background worker with instant cache startup
-- **Fast search** — prefix trie + inverted word index (sub-16ms on large indexes)
+- **Responsive search** — cancellable search slices, cached folder scoring, and bounded results
 - **True paste** — restores focus and simulates Ctrl+V into the previous app
-- **Glassmorphic UI** — Windows Acrylic + backdrop blur, Framer Motion animations
-- **React launcher** — virtualized result list, action panel (Tab), match highlighting
+- **Monochrome UI** — charcoal surfaces, gray dividers, local fonts, light/system theme options
+- **React launcher** — keyboard navigation, secondary action buttons, file previews, and match highlighting
 
 ### Raycast-style providers
 - `@files` / `@clip` / `@emoji` / `@system` / `@games` / `@process` / `@ai` scoped modes
 - **Quicklinks** — keyword URL bookmarks
 - **Clipboard history** — text + image, browse with `@clip`
-- **Snippets** — trigger-based text expansion
+- **Snippets** — find by trigger in the launcher and paste into the previous app; browse with `@snippets`
 - **Calculator** — natural language (`120 x 4 - 28`)
 - **Unit conversion** — length, mass, volume, temperature, data
 - **Emoji picker** — search by name, copy to clipboard
@@ -45,9 +45,15 @@ npm install
 npm run build    # build React launcher
 npm start        # run Electron
 npm run dist     # build + Windows installer
+npm test         # regression tests
+npm run typecheck
+npm run test:smoke      # isolated Electron UI and integration checks
+npm run test:benchmark  # synthetic 100k / 1m entry search benchmark
 ```
 
-The app loads the React build from `dist/renderer/launcher/` when present, falling back to `src/renderer/index.html`.
+The app loads the React build from `dist/renderer/launcher/`. Build before launching Electron directly. The smoke test uses a temporary profile and fixture directory; it does not change your normal settings or clipboard history.
+
+Type to open matching results beneath the pill. Clearing the input collapses it. Use **Ctrl+K** to toggle suggestions, **Up/Down** to select, **Enter** for the primary action, and **Shift+Enter** for the secondary action. Tab moves through buttons. Escape clears the query and collapses the results, then hides the launcher. All search types share this input; optional `@files`, `@emoji`, `@clip`, and other scopes remain available.
 
 ## Project structure
 
@@ -55,7 +61,7 @@ The app loads the React build from `dist/renderer/launcher/` when present, falli
 lumos-search/
 ├── src/
 │   ├── main.js              # Electron main process
-│   ├── search-index.js      # Fast file search index
+│   ├── search-index.js      # Match highlighting
 │   ├── paste.js             # True paste via PowerShell
 │   ├── extensions.js        # Plugin loader
 │   ├── analytics.js         # Local search analytics
@@ -69,6 +75,8 @@ lumos-search/
 
 ## Settings
 
-Open via tray → Settings, or click the item counter in the search bar.
+Open via tray → Settings, or the Settings button in the expanded launcher's footer.
 
 Configure hotkeys, appearance (theme/accent/glass blur), indexing, quicklinks, clipboard, snippets, AI, and more.
+
+See [AUDIT.md](AUDIT.md) for the 2.0.1 audit, fixes, verification, and integration limits.

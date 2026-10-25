@@ -1,8 +1,14 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+function subscribe(channel, cb) {
+  const listener = (_event, data) => cb(data);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
+
 contextBridge.exposeInMainWorld('lumos', {
   search: (q) => ipcRenderer.invoke('search', q),
-  runAction: (action, result) => ipcRenderer.send('run-action', { action, result }),
+  runAction: (action, result) => ipcRenderer.invoke('run-action', { action, result }),
   hide: () => ipcRenderer.send('hide-window'),
   getIcon: (p, kind) => ipcRenderer.invoke('get-icon', { path: p, kind }),
   previewFile: (p) => ipcRenderer.invoke('preview-file', p),
@@ -10,9 +16,10 @@ contextBridge.exposeInMainWorld('lumos', {
   openSettings: () => ipcRenderer.send('open-settings'),
   getAppearance: () => ipcRenderer.invoke('get-appearance'),
   getRecentIntents: () => ipcRenderer.invoke('get-recent-intents'),
-  setExpanded: (exp) => ipcRenderer.send('set-expanded', exp),
-  onStatus: (cb) => ipcRenderer.on('index-status', (_e, s) => cb(s)),
-  onShown: (cb) => ipcRenderer.on('window-shown', (_e, d) => cb(d)),
-  onSetQuery: (cb) => ipcRenderer.on('set-query', (_e, q) => cb(q)),
-  onAiResponse: (cb) => ipcRenderer.on('ai-response', (_e, d) => cb(d)),
+  resizeLauncher: (height, animate) => ipcRenderer.send('resize-launcher', { height, animate }),
+  onStatus: (cb) => subscribe('index-status', cb),
+  onShown: (cb) => subscribe('window-shown', cb),
+  onAppearance: (cb) => subscribe('appearance-changed', cb),
+  onSetQuery: (cb) => subscribe('set-query', cb),
+  onAiResponse: (cb) => subscribe('ai-response', cb),
 });

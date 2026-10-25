@@ -1,41 +1,31 @@
 // Window management — list/snap/focus windows via PowerShell.
 
-const { execSync } = require('child_process');
+const { runPowerShell, cachedSnapshot } = require('../powershell');
 
-function listWindows() {
-  if (process.platform !== 'win32') return [];
-  try {
-    const ps = 'Get-Process | Where-Object MainWindowTitle | Select-Object Id, MainWindowTitle, ProcessName | ConvertTo-Json -Compress';
-    const out = execSync(`powershell -NoProfile -Command "${ps}"`, { encoding: 'utf8', windowsHide: true });
-    const parsed = JSON.parse(out || '[]');
-    const arr = Array.isArray(parsed) ? parsed : [parsed];
-    return arr.filter((w) => w && w.MainWindowTitle);
-  } catch {
-    return [];
-  }
-}
+const listWindows = cachedSnapshot('Get-Process | Where-Object MainWindowTitle | Select-Object Id, MainWindowTitle, ProcessName | ConvertTo-Json -Compress');
 
 function focusWindow(pid) {
-  if (process.platform !== 'win32') return;
+  if (process.platform !== 'win32' || !Number.isSafeInteger(pid) || pid <= 0) return;
   const ps = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class Win32 { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); }'; $p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($p -and $p.MainWindowHandle -ne 0) { [Win32]::ShowWindow($p.MainWindowHandle, 9); [Win32]::SetForegroundWindow($p.MainWindowHandle) }`;
-  try {
-    require('child_process').execSync(`powershell -NoProfile -Command "${ps}"`, { windowsHide: true });
-  } catch { /* ignore */ }
+  return runPowerShell(ps);
 }
 
 function snapWindow(direction) {
-  const keys = { left: '%{LEFT}', right: '%{RIGHT}', maximize: '%{UP}', minimize: '%{DOWN}' };
-  const key = keys[direction];
-  if (!key) return;
-  try {
-    execSync(`powershell -Command "(New-Object -ComObject WScript.Shell).SendKeys('${key}')"`, { windowsHide: true });
-  } catch { /* ignore */ }
+  if (!['left', 'right', 'maximize', 'minimize'].includes(direction)) return;
+  const script = `Add-Type -AssemblyName System.Windows.Forms;
+    Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class Snap { [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd); [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int w, int height, uint flags); }';
+    $h = [Snap]::GetForegroundWindow();
+    $area = [System.Windows.Forms.Screen]::FromHandle($h).WorkingArea;
+    ${direction === 'maximize' || direction === 'minimize'
+      ? `[void][Snap]::ShowWindow($h, ${direction === 'maximize' ? 3 : 6})`
+      : `[void][Snap]::ShowWindow($h, 9); $w = [int]($area.Width / 2); [void][Snap]::SetWindowPos($h, [IntPtr]::Zero, ${direction === 'left' ? '$area.X' : '($area.X + $w)'}, $area.Y, $w, $area.Height, 4)`}`;
+  return runPowerShell(script);
 }
 
-function search(ctx) {
+async function search(ctx) {
   const { q, qLower } = ctx;
   const results = [];
-  const windows = listWindows();
+  const windows = ['windows', 'win'].includes(ctx.scope) ? await listWindows() : [];
 
   const snapCommands = [
     { id: 'snap-left', title: 'Snap Window Left', icon: '◧', keywords: ['snap', 'left'] },

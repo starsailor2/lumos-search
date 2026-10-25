@@ -1,481 +1,257 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLumos } from '../shared/hooks/useLumos';
-import type { SearchResult, LearnedIntent } from '../shared/types';
+import { ACTION_LABELS } from '../shared/types';
+import type { SearchResult } from '../shared/types';
+import '../styles/tokens.css';
+import '../styles/fonts.css';
 import './app.css';
 
-function formatRelativeDate(mtime: number) {
-  if (!mtime) return '';
-  const diffSec = Math.floor((Date.now() - mtime) / 1000);
-  if (diffSec < 60) return 'just now';
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return diffMin + ' min ago';
-  const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return diffHour + (diffHour === 1 ? ' hour ago' : ' hours ago');
-  const diffDays = Math.floor(diffHour / 24);
-  if (diffDays === 1) return 'yesterday';
-  if (diffDays < 7) return diffDays + ' days ago';
-  const diffWeeks = Math.floor(diffDays / 7);
-  if (diffWeeks < 4) return diffWeeks + (diffWeeks === 1 ? ' week ago' : ' weeks ago');
-  const d = new Date(mtime);
-  return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+function Icon({ name }: { name: string }) {
+  const paths: Record<string, React.ReactNode> = {
+    all: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4.5 4.5" /></>,
+    app: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
+    file: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z" /><path d="M14 3v6h6M8 13h8M8 17h5" /></>,
+    folder: <path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Zm0 1h18" />,
+    clip: <><rect x="5" y="5" width="14" height="16" rx="2" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="M9 12h6M9 16h4" /></>,
+    emoji: <><circle cx="12" cy="12" r="9" /><path d="M8 14a4 4 0 0 0 8 0M8 9h.01M16 9h.01" /></>,
+    web: <><circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18" /></>,
+    system: <><circle cx="12" cy="12" r="3" /><path d="m9 3-1 3-3 1-2 3 2 2-1 3 3 2 1 3h4l1-3 3-1 2-3-2-2 1-3-3-2-1-3Z" /></>,
+    window: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M9 9v11" /></>,
+    game: <><path d="M7 7h10c3 0 5 10 3 11-2 1-4-3-5-3H9c-1 0-3 4-5 3C2 17 4 7 7 7Z" /><path d="M6 11h4M8 9v4M16 11h.01M18 13h.01" /></>,
+    process: <><path d="M3 12h4l3-8 4 16 3-8h4" /></>,
+    workflow: <><rect x="8" y="2" width="8" height="5" rx="1" /><rect x="2" y="17" width="8" height="5" rx="1" /><rect x="14" y="17" width="8" height="5" rx="1" /><path d="M12 7v5M6 17v-5h12v5" /></>,
+    ai: <path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z" />,
+    calc: <><rect x="5" y="2" width="14" height="20" rx="2" /><path d="M8 6h8M8 11h1M15 11h1M8 15h1M15 15h1M8 19h1M15 19h1" /></>,
+  };
+  const aliases: Record<string, string> = { apps: 'app', files: 'file', folders: 'folder', clipboard: 'clip', settings: 'system', windows: 'window', games: 'game', workflows: 'workflow', websearch: 'web', quicklink: 'web', command: 'system', snippet: 'clip', convert: 'calc' };
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[aliases[name] || name] || paths.file}</svg>;
 }
 
 function highlight(title: string, ranges?: [number, number][]) {
   if (!ranges?.length) return title;
   const parts: React.ReactNode[] = [];
   let last = 0;
-  ranges.forEach(([s, e], i) => {
-    if (s > last) parts.push(title.slice(last, s));
-    parts.push(<mark key={i}>{title.slice(s, e)}</mark>);
-    last = e;
+  ranges.forEach(([start, end], i) => {
+    if (start > last) parts.push(title.slice(last, start));
+    parts.push(<mark key={i}>{title.slice(start, end)}</mark>);
+    last = end;
   });
   if (last < title.length) parts.push(title.slice(last));
   return parts;
 }
 
-type CategoryId = 'all' | 'apps' | 'files' | 'settings' | 'web' | 'folders';
-
 export default function App() {
-  const { search } = useLumos();
-  const pillInputRef = useRef<HTMLInputElement>(null);
-  const expandedInputRef = useRef<HTMLInputElement>(null);
-  const resultsListRef = useRef<HTMLDivElement>(null);
-
+  const { search, indexStatus, appearance } = useLumos();
+  const input = useRef<HTMLInputElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const requestId = useRef(0);
+  const icons = useRef(new Map<string, string>());
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState<CategoryId>('all');
   const [items, setItems] = useState<SearchResult[]>([]);
-  const [sel, setSel] = useState(0);
+  const [itemsQuery, setItemsQuery] = useState('');
+  const [selected, setSelected] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState('');
+  const [answer, setAnswer] = useState('');
+  const [preview, setPreview] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
   const [iconCache, setIconCache] = useState<Record<string, string>>({});
-  const queryId = useRef(0);
-  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const [refresh, setRefresh] = useState(0);
+  const wasIndexing = useRef(false);
+  const lastIndexRefresh = useRef(0);
 
-  // Expand / Collapse window IPC synchronization
-  const triggerExpand = useCallback((shouldExpand: boolean) => {
-    setExpanded(shouldExpand);
-    if (window.lumos?.setExpanded) {
-      window.lumos.setExpanded(shouldExpand);
+  const expand = useCallback((value: boolean) => setExpanded(value), []);
+
+  useLayoutEffect(() => {
+    const content = panel.current;
+    if (!content) return;
+    content.inert = !expanded;
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const resize = () => window.lumos.resizeLauncher(
+      expanded ? 60 + Math.ceil(content.getBoundingClientRect().height) : 60,
+      appearance?.animations !== false && !media.matches,
+    );
+    const observer = new ResizeObserver(resize);
+    observer.observe(content);
+    media.addEventListener('change', resize);
+    resize();
+    return () => { observer.disconnect(); media.removeEventListener('change', resize); };
+  }, [expanded, appearance?.animations]);
+
+  useEffect(() => {
+    const offShown = window.lumos.onShown(() => {
+      ++requestId.current;
+      expand(false);
+      setQuery(''); setItems([]); setItemsQuery(''); setSelected(0);
+      setError(''); setAnswer(''); setShowPreview(false);
+      setRefresh((n) => n + 1);
+      input.current?.focus();
+    });
+    const offQuery = window.lumos.onSetQuery((q) => {
+      setQuery(q); expand(true); input.current?.focus();
+    });
+    const offAI = window.lumos.onAiResponse((data) => {
+      setError(data.error || ''); setAnswer(data.answer || '');
+      expand(true);
+    });
+    return () => { offShown(); offQuery(); offAI(); };
+  }, [expand]);
+
+  useEffect(() => {
+    if (wasIndexing.current && indexStatus.status !== 'indexing') setRefresh((n) => n + 1);
+    wasIndexing.current = indexStatus.status === 'indexing';
+  }, [indexStatus.status]);
+
+  useEffect(() => {
+    if (indexStatus.status !== 'indexing' || !indexStatus.indexed) return;
+    const timer = setTimeout(() => {
+      lastIndexRefresh.current = Date.now();
+      setRefresh((n) => n + 1);
+    }, Math.max(0, 1000 - (Date.now() - lastIndexRefresh.current)));
+    return () => clearTimeout(timer);
+  }, [indexStatus.indexed, indexStatus.status]);
+
+  useEffect(() => {
+    const id = ++requestId.current;
+    setBusy(true); setError(''); setSelected(0); setAnswer('');
+    const timer = setTimeout(async () => {
+      try {
+        const response = await search(query);
+        if (id !== requestId.current) return;
+        setItems(response.results || []);
+        setItemsQuery(query);
+        setBusy(false);
+        const updates: Record<string, string> = {};
+        let nextIcon = 0;
+        const results = response.results || [];
+        await Promise.all(Array.from({ length: Math.min(6, results.length) }, async () => {
+          while (id === requestId.current && nextIcon < results.length) {
+            const item = results[nextIcon++];
+            const path = typeof item.data?.path === 'string' ? item.data.path : '';
+            if (!path) continue;
+            const url = icons.current.get(path) || await window.lumos.getIcon(path, item.type).catch(() => null);
+            if (url) {
+              if (icons.current.size >= 400) icons.current.delete(icons.current.keys().next().value!);
+              icons.current.set(path, url); updates[path] = url;
+            }
+          }
+        }));
+        if (id === requestId.current) setIconCache(updates);
+      } catch (err) {
+        if (id === requestId.current) { setItems([]); setError(err instanceof Error ? err.message : 'Search failed. Try again.'); }
+      } finally { if (id === requestId.current) setBusy(false); }
+    }, 45);
+    return () => { clearTimeout(timer); ++requestId.current; };
+  }, [query, refresh, search]);
+
+  const visibleItems = query.trim() && !itemsQuery.trim() ? [] : items;
+  const item = visibleItems[selected];
+  useEffect(() => {
+    if (!expanded || !list.current) return;
+    const row = list.current.querySelector('[aria-selected="true"]');
+    if (!row) return;
+    const viewport = list.current.getBoundingClientRect();
+    const bounds = row.getBoundingClientRect();
+    // Scroll only the results, never the clipped shell containing the input.
+    if (bounds.top < viewport.top) list.current.scrollTop -= viewport.top - bounds.top;
+    else if (bounds.bottom > viewport.bottom) list.current.scrollTop += bounds.bottom - viewport.bottom;
+  }, [selected, visibleItems, expanded]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPreview(null);
+    const path = item?.data?.path;
+    if (showPreview && typeof path === 'string') {
+      window.lumos.previewFile(path).then((text) => { if (!cancelled) setPreview(text); }).catch(() => {});
     }
-  }, []);
+    return () => { cancelled = true; };
+  }, [item, showPreview]);
 
-  const loadIcons = useCallback((results: SearchResult[], myId: number) => {
-    results.forEach((it) => {
-      if ((it.type === 'file' || it.type === 'folder' || it.type === 'app') && it.data?.path) {
-        const p = String(it.data.path);
-        window.lumos.getIcon(p, it.type).then((url) => {
-          if (myId !== queryId.current || !url) return;
-          setIconCache((prev) => ({ ...prev, [p]: url }));
-        });
-      }
-    });
-  }, []);
+  const run = useCallback(async (result: SearchResult | undefined, action?: string) => {
+    if (!result || busy || running) return;
+    setRunning(true); setError('');
+    try {
+      const response = await window.lumos.runAction(action || result.actions?.[0] || 'open', result);
+      if (response?.error) setError(response.error);
+    } catch (err) { setError(err instanceof Error ? err.message : 'Action failed. Try again.'); }
+    finally { setRunning(false); }
+  }, [busy, running]);
 
-  const doSearch = useCallback(async (q: string) => {
-    const my = ++queryId.current;
-    const res = await search(q);
-    if (my !== queryId.current) return;
-    setItems(res.results || []);
-    setSel(0);
-    loadIcons(res.results || [], my);
-  }, [search, loadIcons]);
-
-  useEffect(() => {
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => doSearch(query), 70);
-    return () => clearTimeout(timer.current);
-  }, [query, doSearch]);
-
-  // Window shown handler
-  useEffect(() => {
-    window.lumos?.onShown?.(() => {
-      triggerExpand(false);
-      setQuery('');
-      setActiveCategory('all');
-      setSel(0);
-      doSearch('');
-      setTimeout(() => {
-        pillInputRef.current?.focus();
-        pillInputRef.current?.select();
-      }, 50);
-    });
-
-    window.lumos?.onSetQuery?.((q) => {
-      setQuery(q);
-      triggerExpand(true);
-      doSearch(q);
-    });
-  }, [doSearch, triggerExpand]);
-
-  // Focus input when mode changes
-  useEffect(() => {
-    if (expanded) {
-      setTimeout(() => {
-        expandedInputRef.current?.focus();
-      }, 30);
-    } else {
-      setTimeout(() => {
-        pillInputRef.current?.focus();
-      }, 30);
-    }
-  }, [expanded]);
-
-  // Calculate Category Counts
-  const categories: { id: CategoryId; label: string; count: number }[] = [
-    { id: 'all', label: 'All', count: items.length },
-    { id: 'apps', label: 'Apps', count: items.filter((it) => it.type === 'app').length },
-    { id: 'files', label: 'Files', count: items.filter((it) => it.type === 'file').length },
-    { id: 'settings', label: 'Settings', count: items.filter((it) => it.type === 'system' || it.type === 'command' || it.type === 'process').length },
-    { id: 'web', label: 'Web', count: items.filter((it) => it.type === 'websearch' || it.type === 'url' || it.type === 'ai' || it.type === 'calculator').length },
-    { id: 'folders', label: 'Folders', count: items.filter((it) => it.type === 'folder').length },
-  ];
-
-  // Filter items by category
-  const filteredItems = items.filter((it) => {
-    if (activeCategory === 'all') return true;
-    if (activeCategory === 'apps') return it.type === 'app';
-    if (activeCategory === 'files') return it.type === 'file';
-    if (activeCategory === 'settings') return it.type === 'system' || it.type === 'command' || it.type === 'process';
-    if (activeCategory === 'web') return it.type === 'websearch' || it.type === 'url' || it.type === 'ai' || it.type === 'calculator';
-    if (activeCategory === 'folders') return it.type === 'folder';
-    return true;
-  });
-
-  const activate = (i: number) => {
-    const it = filteredItems[i];
-    if (!it) return;
-    const action = it.actions?.[0] || 'open';
-    window.lumos?.runAction(action, it);
-  };
-
-  // Keyboard navigation
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Escape') {
-        if (query) {
-          setQuery('');
-        } else if (expanded) {
-          triggerExpand(false);
-        } else {
-          window.lumos?.hide();
-        }
         e.preventDefault();
-        return;
-      }
-
-      if ((e.ctrlKey && e.key.toLowerCase() === 'k') || e.key === 'F14') {
+        if (answer || error) { setAnswer(''); setError(''); }
+        else if (query) { setQuery(''); expand(false); setShowPreview(false); }
+        else if (expanded) expand(false);
+        else window.lumos.hide();
+      } else if (e.ctrlKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault(); expand(!expanded);
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
-        triggerExpand(!expanded);
-        return;
-      }
-
-      if (e.key === 'ArrowDown') {
+        if (!expanded) expand(true);
+        else if (visibleItems.length) setSelected((s) => (s + (e.key === 'ArrowDown' ? 1 : -1) + visibleItems.length) % visibleItems.length);
+      } else if (e.key === 'Enter' && !(e.target instanceof HTMLButtonElement)) {
         e.preventDefault();
-        if (!expanded) {
-          triggerExpand(true);
-        } else if (filteredItems.length) {
-          setSel((s) => (s + 1) % filteredItems.length);
-        }
-        return;
-      }
-
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (filteredItems.length) {
-          setSel((s) => (s - 1 + filteredItems.length) % filteredItems.length);
-        }
-        return;
-      }
-
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        if (!expanded) {
-          triggerExpand(true);
-        } else if (filteredItems[sel]) {
-          activate(sel);
-        }
-        return;
-      }
-
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        if (!expanded) {
-          triggerExpand(true);
-          return;
-        }
-        // Cycle categories
-        const catIdx = categories.findIndex((c) => c.id === activeCategory);
-        const nextCat = categories[(catIdx + (e.shiftKey ? -1 : 1) + categories.length) % categories.length];
-        setActiveCategory(nextCat.id);
-        setSel(0);
-        return;
+        if (!expanded) expand(true);
+        else void run(item, e.shiftKey ? item?.actions?.[1] : undefined);
       }
     };
-
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [expanded, query, filteredItems, sel, activeCategory, categories, triggerExpand]);
+  }, [query, expanded, visibleItems, item, answer, error, expand, run]);
 
-  const renderCategoryIcon = (id: CategoryId) => {
-    switch (id) {
-      case 'all':
-        return (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
-            <rect x="3" y="3" width="7" height="7" rx="1.5" />
-            <rect x="14" y="3" width="7" height="7" rx="1.5" />
-            <rect x="14" y="14" width="7" height="7" rx="1.5" />
-            <rect x="3" y="14" width="7" height="7" rx="1.5" />
-          </svg>
-        );
-      case 'apps':
-        return (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-            <path d="M3 9h18" />
-            <path d="M9 21V9" />
-          </svg>
-        );
-      case 'files':
-        return (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-          </svg>
-        );
-      case 'settings':
-        return (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-        );
-      case 'web':
-        return (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
-            <circle cx="12" cy="12" r="10" />
-            <line x1="2" y1="12" x2="22" y2="12" />
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-          </svg>
-        );
-      case 'folders':
-        return (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-          </svg>
-        );
-    }
-  };
-
-  const renderItemIcon = (item: SearchResult) => {
-    const p = item.data?.path ? String(item.data.path) : '';
-    const iconUrl = iconCache[p];
-    if (iconUrl) {
-      return <img src={iconUrl} alt="" className="item-icon-img" />;
-    }
-
-    if (item.type === 'folder') {
-      return (
-        <svg viewBox="0 0 24 24" fill="#f5c242" className="item-icon-svg">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-        </svg>
-      );
-    }
-
-    if (item.type === 'file') {
-      return (
-        <svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.85)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="item-icon-svg">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-          <line x1="16" y1="13" x2="8" y2="13" />
-          <line x1="16" y1="17" x2="8" y2="17" />
-        </svg>
-      );
-    }
-
-    if (item.type === 'websearch' || item.type === 'url') {
-      return (
-        <svg viewBox="0 0 24 24" fill="none" className="item-icon-svg">
-          <circle cx="12" cy="12" r="10" fill="#4285F4" />
-          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="#ffffff" strokeWidth="1.5" />
-          <line x1="2" y1="12" x2="22" y2="12" stroke="#ffffff" strokeWidth="1.5" />
-        </svg>
-      );
-    }
-
-    if (item.type === 'system' || item.type === 'command' || item.type === 'process') {
-      return (
-        <svg viewBox="0 0 24 24" fill="none" stroke="#7eb1ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="item-icon-svg">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-      );
-    }
-
-    // Default App icon
-    return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="#68a5ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="item-icon-svg">
-        <polygon points="5 3 19 12 5 21 5 3" fill="rgba(104,165,255,0.25)" />
-      </svg>
-    );
-  };
-
-  const formatSubtitle = (item: SearchResult) => {
-    if (item.type === 'app') return 'App';
-    if (item.type === 'websearch') return 'Search the web';
-    if (item.type === 'system' || item.type === 'command') return 'System command';
-    return item.subtitle || (item.type === 'folder' ? 'Folder' : 'File');
-  };
-
-  // ══════════════════════════════════════════════════════════
-  // RENDER MODE 1: COMPACT PILL (Normal Mode)
-  // ══════════════════════════════════════════════════════════
-  if (!expanded) {
-    return (
-      <div className="pill-container">
-        <div className="glass-pill" onClick={() => triggerExpand(true)}>
-          <svg className="pill-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="7" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <div className="pill-cursor" />
-          <input
-            ref={pillInputRef}
-            className="pill-input"
-            placeholder="Search anything..."
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              triggerExpand(true);
-            }}
-            onClick={() => triggerExpand(true)}
-            autoFocus
-            spellCheck={false}
-          />
-          <div className="pill-shortcut" onClick={() => triggerExpand(true)}>
-            Ctrl + K
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ══════════════════════════════════════════════════════════
-  // RENDER MODE 2: EXPANDED CARD (Two-Column Search Window)
-  // ══════════════════════════════════════════════════════════
   return (
-    <div className="expanded-card">
-      {/* Top Header Search Bar */}
-      <div className="card-header">
-        <svg className="header-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="11" cy="11" r="7" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-        <input
-          ref={expandedInputRef}
-          className="header-input"
-          placeholder="Search anything..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          autoFocus
-          spellCheck={false}
-        />
-        {query ? (
-          <button
-            className="header-clear-btn"
-            onClick={() => {
-              setQuery('');
-              triggerExpand(false);
-            }}
-            title="Clear"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        ) : (
-          <button
-            className="header-clear-btn"
-            onClick={() => triggerExpand(false)}
-            title="Collapse"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        )}
-      </div>
-
-      {/* Main Two-Column Body */}
-      <div className="card-body">
-        {/* Left Sidebar (Categories) */}
-        <div className="sidebar">
-          {categories.map((cat) => {
-            const isActive = activeCategory === cat.id;
-            return (
-              <div
-                key={cat.id}
-                className={`sidebar-item${isActive ? ' active' : ''}`}
-                onClick={() => {
-                  setActiveCategory(cat.id);
-                  setSel(0);
-                }}
-              >
-                <span className="sidebar-icon">{renderCategoryIcon(cat.id)}</span>
-                <span className="sidebar-label">{cat.label}</span>
-                <span className="sidebar-count">{cat.count}</span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Right Content Area (Results List) */}
-        <div className="results-pane" ref={resultsListRef}>
-          {filteredItems.length === 0 ? (
-            <div className="empty-results">
-              <p className="empty-results-title">No matching {activeCategory !== 'all' ? activeCategory : 'results'}</p>
-              <p className="empty-results-hint">Press Esc to clear or try another search</p>
-            </div>
-          ) : (
-            filteredItems.map((item, index) => {
-              const isSelected = index === sel;
-              const hasPopout = isSelected && (item.type === 'app' || item.type === 'command' || item.type === 'websearch' || item.type === 'url');
-              const modifiedDate = item.data?.mtime ? formatRelativeDate(Number(item.data.mtime)) : '';
-
-              return (
-                <div
-                  key={item.id}
-                  className={`result-card${isSelected ? ' selected' : ''}`}
-                  onClick={() => activate(index)}
-                  onMouseMove={() => setSel(index)}
-                >
-                  <div className="item-icon-box">
-                    {renderItemIcon(item)}
-                  </div>
-                  <div className="item-text">
-                    <div className="item-title">{highlight(item.title, item.matchRanges)}</div>
-                    <div className="item-subtitle">{formatSubtitle(item)}</div>
-                  </div>
-                  <div className="item-trailing">
-                    {modifiedDate && (
-                      <span className="item-date">Last modified: {modifiedDate}</span>
-                    )}
-                    {item.isIntent && (
-                      <span className="badge-intent">INTENT</span>
-                    )}
-                    {hasPopout && (
-                      <span className="popout-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="7" y1="17" x2="17" y2="7" />
-                          <polyline points="7 7 17 7 17 17" />
-                        </svg>
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
+    <div className="launcher-container">
+      <div className={`launcher${expanded ? ' is-expanded' : ''}`}>
+        <header className="search-header">
+          <span className="search-icon"><Icon name="all" /></span>
+          <input ref={input} className="search-input" aria-label="Search apps, files and commands"
+            role="combobox" aria-expanded={expanded} aria-controls="search-results"
+            aria-activedescendant={expanded && item ? `result-${selected}` : undefined}
+            aria-autocomplete="list" placeholder="Search apps, files, or type @ for a mode…"
+            value={query} onChange={(e) => { setQuery(e.target.value); expand(Boolean(e.target.value.trim())); }}
+            autoFocus autoComplete="off" spellCheck={false} />
+          {expanded || query ? <button className="clear-search" aria-label={query ? 'Clear search' : 'Collapse search'}
+            title={query ? 'Clear search' : 'Collapse search'}
+            onClick={() => { setQuery(''); expand(false); setShowPreview(false); input.current?.focus(); }}>×</button> :
+            <button className="search-shortcut" onClick={() => { expand(true); input.current?.focus(); }} aria-label="Expand search (Control K)">Ctrl K</button>}
+        </header>
+        <div className="results-reveal" aria-hidden={!expanded}>
+          <div className="results-content" ref={panel}>
+            {error && <div className="message error-message" role="alert">{error}</div>}
+            {answer ? <div className="ai-answer" tabIndex={0}><div className="answer-label">AI answer · copied to clipboard</div>{answer}</div> :
+            <div className="results-pane" id="search-results" role="listbox" aria-label="Search results" aria-busy={busy} ref={list}>
+              {!visibleItems.length ? <div className="empty-results">
+                <p className="empty-results-title">{busy ? 'Searching…' : indexStatus.status === 'indexing' ? 'Building your index…' : query ? 'No matches found' : 'Ready when you are'}</p>
+                <p className="empty-results-hint">{query ? 'Try a shorter name or a different search.' : 'Find a file, open an app, or calculate 12 × 4.'}</p>
+              </div> : visibleItems.map((result, i) => {
+                const iconPath = typeof result.data?.path === 'string' ? result.data.path : '';
+                return <div key={result.id} id={`result-${i}`} role="option" aria-selected={selected === i}
+                  className={`result-card${selected === i ? ' selected' : ''}`} onClick={() => { setSelected(i); void run(result); }}
+                  onMouseMove={() => setSelected(i)} title={result.subtitle}>
+                  <div className="item-icon-box">{iconCache[iconPath] ? <img src={iconCache[iconPath]} alt="" className="item-icon-img" /> : <Icon name={result.type} />}</div>
+                  <div className="item-text"><div className="item-title">{highlight(result.title, result.matchRanges)}</div>
+                    <div className="item-subtitle">{result.subtitle}</div></div>
+                  {selected === i && <span className="item-enter" aria-hidden="true">↵</span>}
+                </div>;
+              })}
+            </div>}
+            {showPreview && !answer && <div className="file-preview">{preview || 'No text preview available for this item.'}</div>}
+            {item && !answer && <div className="action-dock" aria-label="Selected result actions">
+              {item.actions.map((action) => <button key={action} className="action-btn" disabled={busy || running} onClick={() => void run(item, action)}>{ACTION_LABELS[action] || action}</button>)}
+              {item.data?.path != null && <button className="action-btn" aria-pressed={showPreview} onClick={() => setShowPreview(!showPreview)}>Preview</button>}
+            </div>}
+            <footer className="status-bar">
+              <button onClick={() => window.lumos.openSettings()} title="Open settings">Settings</button>
+              <span role="status">{running ? 'Working…' : busy ? 'Searching…' : `${visibleItems.length} results`} · {indexStatus.indexed.toLocaleString()} indexed{indexStatus.status === 'indexing' ? ' · indexing…' : indexStatus.status === 'error' ? ' · scan failed; retry in Settings' : ''}</span>
+              <span className="keyboard-hint">↑↓ select · Esc close</span>
+            </footer>
+          </div>
         </div>
       </div>
     </div>

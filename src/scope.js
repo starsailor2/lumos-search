@@ -5,6 +5,9 @@ const SCOPES = {
   file: ['files'],
   apps: ['files'],
   app: ['files'],
+  folders: ['files'],
+  folder: ['files'],
+  web: ['quickactions', 'quicklinks', 'ai'],
   clip: ['clipboard'],
   clipboard: ['clipboard'],
   snip: ['clipboard'],
@@ -34,6 +37,8 @@ const SCOPES = {
   ai: ['ai'],
   path: ['pathintel'],
   batch: ['batch'],
+  workflows: ['workflows'],
+  workflow: ['workflows'],
 };
 
 const PROVIDER_MAP = {
@@ -50,6 +55,7 @@ const PROVIDER_MAP = {
   ai: './providers/ai',
   pathintel: './providers/pathintel',
   batch: './providers/batch',
+  workflows: './providers/workflows',
 };
 
 function parseScope(query) {

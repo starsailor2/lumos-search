@@ -39,7 +39,7 @@ export interface Appearance {
 
 export interface LumosAPI {
   search: (q: string) => Promise<SearchResponse>;
-  runAction: (action: string, result: SearchResult) => void;
+  runAction: (action: string, result: SearchResult) => Promise<{ error?: string } | undefined>;
   hide: () => void;
   getIcon: (path: string, kind: string) => Promise<string | null>;
   previewFile: (path: string) => Promise<string | null>;
@@ -47,11 +47,12 @@ export interface LumosAPI {
   openSettings: () => void;
   getAppearance: () => Promise<Appearance>;
   getRecentIntents: () => Promise<LearnedIntent[]>;
-  setExpanded: (expanded: boolean) => void;
-  onStatus: (cb: (s: { status: string; indexed: number; scanned?: number; lastIndexUpdate?: number }) => void) => void;
-  onShown: (cb: (d?: { appearance?: Appearance }) => void) => void;
-  onSetQuery: (cb: (q: string) => void) => void;
-  onAiResponse: (cb: (d: { error?: string; answer?: string }) => void) => void;
+  resizeLauncher: (height: number, animate: boolean) => void;
+  onStatus: (cb: (s: { status: string; indexed: number; scanned?: number; lastIndexUpdate?: number }) => void) => () => void;
+  onShown: (cb: (d?: { appearance?: Appearance }) => void) => () => void;
+  onAppearance: (cb: (d: Appearance) => void) => () => void;
+  onSetQuery: (cb: (q: string) => void) => () => void;
+  onAiResponse: (cb: (d: { error?: string; answer?: string }) => void) => () => void;
 }
 
 declare global {

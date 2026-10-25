@@ -28,7 +28,8 @@ function readSteamGames() {
         const dirMatch = /"installdir"\s+"([^"]+)"/.exec(content);
         if (nameMatch) {
           const installDir = dirMatch ? path.join(common, dirMatch[1]) : common;
-          games.push({ name: nameMatch[1], path: installDir, platform: 'Steam' });
+          const appId = /"appid"\s+"(\d+)"/.exec(content)?.[1] || /appmanifest_(\d+)\.acf/i.exec(acf)?.[1];
+          games.push({ name: nameMatch[1], path: installDir, platform: 'Steam', url: appId ? 'steam://rungameid/' + appId : null });
         }
       }
     } catch { /* skip */ }
@@ -48,7 +49,7 @@ function readSteamGames() {
 
 function readEpicGames() {
   const games = [];
-  const manifestDir = path.join(os.homedir(), 'AppData', 'Local', 'EpicGamesLauncher', 'Saved', 'Manifests');
+  const manifestDir = path.join(process.env.ProgramData || 'C:\\ProgramData', 'Epic', 'EpicGamesLauncher', 'Data', 'Manifests');
   if (!fs.existsSync(manifestDir)) return games;
   try {
     for (const file of fs.readdirSync(manifestDir)) {
@@ -56,7 +57,7 @@ function readEpicGames() {
       try {
         const data = JSON.parse(fs.readFileSync(path.join(manifestDir, file), 'utf8'));
         if (data.DisplayName && data.InstallLocation) {
-          games.push({ name: data.DisplayName, path: data.InstallLocation, platform: 'Epic' });
+          games.push({ name: data.DisplayName, path: data.InstallLocation, platform: 'Epic', url: data.AppName ? 'com.epicgames.launcher://apps/' + encodeURIComponent(data.AppName) + '?action=launch&silent=true' : null });
         }
       } catch { /* skip */ }
     }
@@ -65,7 +66,7 @@ function readEpicGames() {
 }
 
 function getGames() {
-  if (Date.now() - cacheTime < CACHE_TTL && gameCache.length) return gameCache;
+  if (cacheTime && Date.now() - cacheTime < CACHE_TTL) return gameCache;
   gameCache = [...readSteamGames(), ...readEpicGames()];
   cacheTime = Date.now();
   return gameCache;
@@ -88,8 +89,8 @@ function search(ctx) {
       subtitle: game.platform + ' · ' + game.path,
       score,
       icon: '🎮',
-      actions: ['open', 'reveal'],
-      data: { path: game.path, kind: 'folder' },
+      actions: game.url ? ['open-external', 'reveal'] : ['open', 'reveal'],
+      data: { path: game.path, kind: 'folder', url: game.url },
     });
     if (results.length >= 40) break;
   }

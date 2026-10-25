@@ -23,6 +23,8 @@ function createSettingsWindow() {
     },
   });
   settingsWin.setMenuBarVisibility(false);
+  settingsWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  settingsWin.webContents.on('will-navigate', (event) => event.preventDefault());
   settingsWin.loadFile(path.join(__dirname, 'renderer', 'settings.html'));
   settingsWin.once('ready-to-show', () => settingsWin.show());
   settingsWin.on('closed', () => { settingsWin = null; });

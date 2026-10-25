@@ -1,31 +1,33 @@
 <!DOCTYPE html>
-<html>
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+<link rel="stylesheet" href="../styles/fonts.css">
+<link rel="stylesheet" href="../styles/tokens.css">
 <title>Lumos Search — Settings</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { background: #1c1c20; color: #f0f0f3; font-family: 'Segoe UI', system-ui, sans-serif; }
+  html, body { background: var(--bg); color: var(--text-primary); font-family: 'DM Sans', 'Segoe UI', system-ui, sans-serif; font-synthesis: none; }
   body { padding: 20px 24px 40px; }
-  h1 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+  h1 { font-family: 'Manrope', sans-serif; font-size: 25px; font-weight: 650; letter-spacing: -.8px; margin-bottom: 8px; }
   p.hint { color: rgba(255,255,255,0.45); font-size: 12px; margin-bottom: 20px; }
   section { margin-bottom: 26px; padding-bottom: 22px; border-bottom: 1px solid rgba(255,255,255,0.08); }
   section:last-child { border-bottom: none; }
-  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: rgba(255,255,255,0.55); margin-bottom: 12px; }
+  h2 { font-family: 'Manrope', sans-serif; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; color: var(--text-secondary); margin-bottom: 18px; }
   label.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; font-size: 13.5px; }
   label.row span.desc { color: rgba(255,255,255,0.4); font-size: 11.5px; display: block; margin-top: 2px; }
   input[type=text], input[type=number], input[type=url], input[type=password], select {
     background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
     border-radius: 6px; color: #f0f0f3; padding: 6px 9px; font-size: 13px; outline: none;
   }
-  input:focus, select:focus { border-color: #CC785C; }
-  input[type=checkbox] { width: 16px; height: 16px; accent-color: #CC785C; }
+  input:focus, select:focus { border-color: var(--text-secondary); }
+  input[type=checkbox] { width: 16px; height: 16px; accent-color: #bdbdbd; }
   button {
-    background: rgba(204, 120, 92, 0.15); border: 1px solid rgba(204, 120, 92, 0.35); color: #F3F1EC;
+    background: var(--bg-hover); border: 1px solid var(--border-selected); color: var(--text-primary);
     border-radius: 6px; padding: 6px 12px; font-size: 12.5px; cursor: pointer;
   }
-  button:hover { background: rgba(204, 120, 92, 0.25); border-color: #CC785C; }
+  button:hover { background: var(--bg-selected); border-color: var(--text-secondary); }
   button.danger { background: rgba(255,90,90,0.12); border-color: rgba(255,90,90,0.35); color: #ffb3b3; }
   button.danger:hover { background: rgba(255,90,90,0.22); }
   .list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
@@ -36,15 +38,23 @@
     background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
     border-radius: 6px; color: #f0f0f3; padding: 6px 9px; font-size: 13px; min-width: 140px; text-align: center; cursor: text;
   }
-  .hotkey-input.recording { border-color: #CC785C; color: #CC785C; }
-  .snippet-row, .ql-row { display: grid; grid-template-columns: 100px 1fr 1fr auto; gap: 8px; align-items: start; margin-bottom: 8px; }
+  .hotkey-input.recording { border-color: var(--text-secondary); color: var(--text-primary); }
+  .snippet-row, .ql-row { display: grid; grid-template-columns: 90px minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: start; margin-bottom: 8px; }
+  .snippet-row { grid-template-columns: 100px minmax(0, 1fr) auto; }
+  .snippet-row > *, .ql-row > * { min-width: 0; }
+  .list-item span { overflow-wrap: anywhere; }
   .snippet-row textarea {
     background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px;
     color: #f0f0f3; padding: 6px 9px; font-size: 12.5px; resize: vertical; min-height: 32px; font-family: inherit;
   }
-  #toast { position: fixed; bottom: 16px; right: 16px; background: rgba(30, 30, 34, 0.95); border: 1px solid #CC785C; color: #F3F1EC;
+  #toast { position: fixed; bottom: 16px; right: 16px; background: var(--bg-panel); border: 1px solid var(--border-selected); color: var(--text-primary);
     padding: 8px 14px; border-radius: 6px; font-size: 12.5px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
   #toast.show { opacity: 1; }
+  p.hint, label.row span.desc { color: var(--text-secondary); }
+  section { border-color: var(--border); padding-bottom: 28px; margin-bottom: 28px; }
+  input[type=text], input[type=number], input[type=url], input[type=password], select, .hotkey-input, .snippet-row textarea { background: var(--bg-surface); border-color: var(--border-selected); color: var(--text-primary); border-radius: 8px; }
+  .list-item { background: var(--bg-hover); }
+  button:focus-visible, .hotkey-input:focus-visible { outline: 2px solid var(--text-secondary); outline-offset: 3px; }
 </style>
 </head>
 <body>
@@ -64,7 +74,7 @@
   <label class="row"><span>Theme</span>
     <select id="theme"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select>
   </label>
-  <label class="row"><span>Accent color</span><input type="text" id="accentColor" style="width:100px" placeholder="#4ea1ff"></label>
+  <label class="row"><span>Focus color</span><input type="text" id="accentColor" style="width:100px" placeholder="#eeeeee"></label>
   <label class="row"><span>Glass blur (px)</span><input type="number" id="glassBlur" min="0" max="80" style="width:70px"></label>
   <label class="row"><span>Animations</span><input type="checkbox" id="animations"></label>
 </section>
@@ -137,9 +147,11 @@
   }
 
   async function save(patch) {
-    cfg = await window.lumosSettings.updateConfig(patch);
-    toast('Saved');
-    renderAll();
+    try {
+      cfg = await window.lumosSettings.updateConfig(patch);
+      applyTheme();
+      toast('Saved');
+    } catch (error) { toast('Could not save: ' + error.message); }
   }
 
   function renderRoots() {
@@ -156,13 +168,16 @@
     roots.forEach((r, i) => {
       const row = document.createElement('div');
       row.className = 'list-item';
-      row.innerHTML = '<span>' + r + '</span>';
+      const name = document.createElement('span');
+      name.textContent = r;
+      row.appendChild(name);
       const btn = document.createElement('button');
       btn.textContent = 'Remove';
       btn.onclick = async () => {
         const next = roots.slice();
         next.splice(i, 1);
         await save({ indexedRoots: next.length ? next : null });
+        renderRoots();
       };
       row.appendChild(btn);
       list.appendChild(row);
@@ -175,13 +190,16 @@
     cfg.excludedDirs.forEach((d, i) => {
       const row = document.createElement('div');
       row.className = 'list-item';
-      row.innerHTML = '<span>' + d + '</span>';
+      const name = document.createElement('span');
+      name.textContent = d;
+      row.appendChild(name);
       const btn = document.createElement('button');
       btn.textContent = 'Remove';
       btn.onclick = async () => {
         const next = cfg.excludedDirs.slice();
         next.splice(i, 1);
         await save({ excludedDirs: next });
+        renderExcludes();
       };
       row.appendChild(btn);
       list.appendChild(row);
@@ -211,6 +229,7 @@
         const next = cfg.snippets.slice();
         next.splice(i, 1);
         await save({ snippets: next });
+        renderSnippets();
       };
       row.append(trigger, body, del);
       list.appendChild(row);
@@ -243,13 +262,20 @@
         const next = (cfg.quicklinks || []).slice();
         next.splice(i, 1);
         await save({ quicklinks: next });
+        renderQuicklinks();
       };
       row.append(kw, title, url, del);
       list.appendChild(row);
     });
   }
 
+  function applyTheme() {
+    const theme = cfg.appearance?.theme || 'dark';
+    document.documentElement.dataset.theme = theme === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme;
+  }
+
   function renderAll() {
+    applyTheme();
     $('maxResults').value = cfg.maxResults;
     $('qaCalc').checked = cfg.quickActions.calculator;
     $('qaConvert').checked = cfg.quickActions.unitConvert;
@@ -264,8 +290,8 @@
     $('fb0').value = (cfg.hotkeyFallbacks || [])[0] || '';
     $('fb1').value = (cfg.hotkeyFallbacks || [])[1] || '';
     const app = cfg.appearance || {};
-    $('theme').value = app.theme || 'system';
-    $('accentColor').value = app.accentColor || '#4ea1ff';
+    $('theme').value = app.theme || 'dark';
+    $('accentColor').value = app.accentColor || '#eeeeee';
     $('glassBlur').value = app.glassBlur != null ? app.glassBlur : 40;
     $('animations').checked = app.animations !== false;
     const ai = cfg.ai || {};
@@ -311,16 +337,18 @@
     const dir = await window.lumosSettings.pickFolder();
     if (!dir) return;
     await save({ indexedRoots: (cfg.indexedRoots || []).concat(dir) });
+    renderRoots();
   });
-  $('useAllDrives').addEventListener('click', () => save({ indexedRoots: null }));
-  $('addExclude').addEventListener('click', () => {
+  $('useAllDrives').addEventListener('click', async () => { await save({ indexedRoots: null }); renderRoots(); });
+  $('addExclude').addEventListener('click', async () => {
     const v = $('newExclude').value.trim();
     if (!v) return;
-    save({ excludedDirs: cfg.excludedDirs.concat(v) });
+    await save({ excludedDirs: cfg.excludedDirs.concat(v) });
+    renderExcludes();
     $('newExclude').value = '';
   });
-  $('addSnippet').addEventListener('click', () => save({ snippets: cfg.snippets.concat({ trigger: '', body: '' }) }));
-  $('addQuicklink').addEventListener('click', () => save({ quicklinks: (cfg.quicklinks || []).concat({ keyword: '', title: '', url: '' }) }));
+  $('addSnippet').addEventListener('click', async () => { await save({ snippets: cfg.snippets.concat({ trigger: '', body: '' }) }); renderSnippets(); });
+  $('addQuicklink').addEventListener('click', async () => { await save({ quicklinks: (cfg.quicklinks || []).concat({ keyword: '', title: '', url: '' }) }); renderQuicklinks(); });
   $('rebuildIndex').addEventListener('click', () => { window.lumosSettings.rebuildIndex(); toast('Rebuilding index…'); });
   $('clearFrecency').addEventListener('click', () => { window.lumosSettings.resetFrecency(); toast('Usage history cleared'); });
   $('clearClipboard').addEventListener('click', () => { window.lumosSettings.clearClipboard(); toast('Clipboard cleared'); });

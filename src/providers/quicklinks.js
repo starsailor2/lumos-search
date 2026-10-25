@@ -12,7 +12,7 @@ function search(ctx) {
     let score = -1;
     if (!q) {
       score = 350;
-    } else if (keyword === qLower || keyword.startsWith(qLower) || qLower.startsWith(keyword)) {
+    } else if (keyword && (keyword === qLower || keyword.startsWith(qLower) || qLower.startsWith(keyword))) {
       score = 700 + Math.max(0, 20 - Math.abs(keyword.length - qLower.length));
     } else if (title.toLowerCase().includes(qLower)) {
       score = 500;

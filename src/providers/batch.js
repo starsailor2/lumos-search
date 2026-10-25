@@ -7,7 +7,7 @@ function search(ctx) {
 
   if (qLower === 'copy paths' || qLower === 'batch copy') {
     const paths = [];
-    for (let i = 0; i < Math.min(ctx.idx.count, 20); i++) {
+    for (let i = 0; i < ctx.idx.count && paths.length < 20; i++) {
       if (ctx.idx.flags[i] === 0 || ctx.idx.flags[i] === 1) {
         paths.push(ctx.idx.paths[i]);
       }

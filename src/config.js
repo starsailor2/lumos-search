@@ -9,7 +9,7 @@ let app;
 try { ({ app } = require('electron')); } catch { /* not running under electron (tests) */ }
 
 const DEFAULT_CONFIG = {
-  version: 1,
+  version: 2,
   hotkeys: ['Alt+,', 'Alt+X'],
   hotkeyFallbacks: ['CommandOrControl+,', 'CommandOrControl+X'],
   maxResults: 40,
@@ -37,8 +37,8 @@ const DEFAULT_CONFIG = {
   quicklinks: [], // { id, keyword, title, url }
   workflows: [], // { id, name, trigger?, steps: [{ action, data }] }
   appearance: {
-    theme: 'system', // dark | light | system
-    accentColor: '#4ea1ff',
+    theme: 'dark', // dark | light | system
+    accentColor: '#eeeeee',
     glassBlur: 40,
     animations: true,
   },
@@ -73,10 +73,10 @@ function sanitize(raw) {
   if (Array.isArray(raw.hotkeyFallbacks) && raw.hotkeyFallbacks.every((h) => typeof h === 'string')) {
     cfg.hotkeyFallbacks = raw.hotkeyFallbacks.slice(0, 8);
   }
-  cfg.maxResults = clampNumber(raw.maxResults, 5, 200, DEFAULT_CONFIG.maxResults);
+  cfg.maxResults = Math.round(clampNumber(raw.maxResults, 5, 200, DEFAULT_CONFIG.maxResults));
 
   if (Array.isArray(raw.indexedRoots) && raw.indexedRoots.every((r) => typeof r === 'string')) {
-    cfg.indexedRoots = raw.indexedRoots.slice(0, 64);
+    cfg.indexedRoots = [...new Set(raw.indexedRoots.map((r) => r.trim()).filter((r) => path.isAbsolute(r)))].slice(0, 64);
   } else {
     cfg.indexedRoots = null;
   }
@@ -106,8 +106,8 @@ function sanitize(raw) {
   const cb = raw.clipboard;
   if (cb && typeof cb === 'object') {
     cfg.clipboard.enabled = cb.enabled !== false;
-    cfg.clipboard.maxEntries = clampNumber(cb.maxEntries, 1, 500, DEFAULT_CONFIG.clipboard.maxEntries);
-    cfg.clipboard.maxTextChars = clampNumber(cb.maxTextChars, 100, 200000, DEFAULT_CONFIG.clipboard.maxTextChars);
+    cfg.clipboard.maxEntries = Math.round(clampNumber(cb.maxEntries, 1, 500, DEFAULT_CONFIG.clipboard.maxEntries));
+    cfg.clipboard.maxTextChars = Math.round(clampNumber(cb.maxTextChars, 100, 200000, DEFAULT_CONFIG.clipboard.maxTextChars));
     cfg.clipboard.retainAcrossRestarts = cb.retainAcrossRestarts !== false;
   }
 
@@ -153,7 +153,14 @@ function sanitize(raw) {
         id: typeof w.id === 'string' ? w.id : String(Date.now()) + Math.random().toString(36).slice(2),
         name: w.name.slice(0, 100),
         trigger: typeof w.trigger === 'string' ? w.trigger.slice(0, 32) : '',
-        steps: Array.isArray(w.steps) ? w.steps.slice(0, 20) : [],
+        steps: Array.isArray(w.steps) ? w.steps.filter((s) => s && ['open', 'copy'].includes(s.action))
+          .slice(0, 20).map((s) => {
+            const data = s.data && typeof s.data === 'object' ? s.data : s;
+            return { action: s.action, data: {
+              ...(typeof data.path === 'string' ? { path: data.path } : {}),
+              ...(typeof data.text === 'string' ? { text: data.text.slice(0, 20000) } : {}),
+            } };
+          }) : [],
       }));
   }
 
@@ -165,6 +172,10 @@ function sanitize(raw) {
     }
     cfg.appearance.glassBlur = clampNumber(app.glassBlur, 0, 80, DEFAULT_CONFIG.appearance.glassBlur);
     cfg.appearance.animations = app.animations !== false;
+  }
+  if ((raw.version || 1) < 2) {
+    cfg.appearance.theme = 'dark';
+    cfg.appearance.accentColor = '#eeeeee';
   }
 
   const ai = raw.ai;
@@ -203,15 +214,12 @@ function writeAtomic(file, contents) {
   fs.renameSync(tmp, file);
 }
 
-function saveConfig() {
-  try { writeAtomic(configPath(), JSON.stringify(current, null, 2)); } catch { /* non-fatal */ }
-}
-
 // Shallow-merges a patch into the current config (one level deep for known
 // object fields), sanitizes the result, persists it, and returns it.
 function updateConfig(patch) {
+  if (!current) loadConfig();
   const merged = { ...current, ...patch };
-  for (const key of ['quickActions', 'clipboard', 'appearance', 'ai']) {
+  for (const key of ['quickActions', 'clipboard', 'appearance', 'ai', 'refresh']) {
     if (patch && patch[key] && typeof patch[key] === 'object') {
       merged[key] = { ...current[key], ...patch[key] };
     }
@@ -219,8 +227,9 @@ function updateConfig(patch) {
   if (patch && patch.favourites) merged.favourites = patch.favourites;
   if (patch && patch.quicklinks) merged.quicklinks = patch.quicklinks;
   if (patch && patch.workflows) merged.workflows = patch.workflows;
-  current = sanitize(merged);
-  saveConfig();
+  const next = sanitize(merged);
+  writeAtomic(configPath(), JSON.stringify(next, null, 2));
+  current = next;
   return current;
 }
 

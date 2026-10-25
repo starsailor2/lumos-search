@@ -13,7 +13,7 @@ const HAS_OPERATOR = /[+\-*/^%x×]/i;
 function normalizeCalcInput(q) {
   return q
     .replace(/×/g, '*')
-    .replace(/\bx\b/gi, '*')
+    .replace(/x/gi, '*')
     .replace(/€/g, '')
     .replace(/\$/g, '')
     .replace(/£/g, '')
@@ -27,11 +27,13 @@ function tokenize(expr) {
   let i = 0;
   while (i < expr.length) {
     const c = expr[i];
-    if (c === ' ') { i++; continue; }
+    if (/\s/.test(c)) { i++; continue; }
     if (/\d|\./.test(c)) {
       let j = i;
       while (j < expr.length && /[\d.]/.test(expr[j])) j++;
-      tokens.push({ t: 'num', v: parseFloat(expr.slice(i, j)) });
+      const literal = expr.slice(i, j);
+      if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(literal)) throw new Error('invalid number');
+      tokens.push({ t: 'num', v: Number(literal) });
       i = j;
     } else if ('+-*/^%()'.includes(c)) {
       tokens.push({ t: c });
@@ -70,20 +72,20 @@ function parseExpr(tokens) {
   function unary() {
     if (peek() && peek().t === '-') { next(); return -unary(); }
     if (peek() && peek().t === '+') { next(); return unary(); }
-    return atom();
+    return pow();
   }
 
   function pow() {
-    const base = unary();
-    if (peek() && peek().t === '^') { next(); return Math.pow(base, pow()); }
+    const base = atom();
+    if (peek() && peek().t === '^') { next(); return Math.pow(base, unary()); }
     return base;
   }
 
   function term() {
-    let v = pow();
+    let v = unary();
     while (peek() && (peek().t === '*' || peek().t === '/' || peek().t === '%')) {
       const op = next().t;
-      const rhs = pow();
+      const rhs = unary();
       if (op === '*') v *= rhs;
       else if (op === '/') v /= rhs;
       else v %= rhs;
@@ -147,7 +149,7 @@ function findTable(unit) {
   return null;
 }
 
-const CONVERT_RE = /^([\d.]+)\s*([a-zA-Z°]+)\s+(?:to|in)\s+([a-zA-Z°]+)$/;
+const CONVERT_RE = /^([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*([a-zA-Z°]+)\s+(?:to|in)\s+([a-zA-Z°]+)$/i;
 
 function tryUnitConvert(q) {
   const m = CONVERT_RE.exec(q.trim());
@@ -156,8 +158,8 @@ function tryUnitConvert(q) {
   const value = parseFloat(numStr);
   if (!Number.isFinite(value)) return null;
 
-  const fromLower = fromU.toLowerCase();
-  const toLower = toU.toLowerCase();
+  const fromLower = fromU.toLowerCase().replace(/^°/, '');
+  const toLower = toU.toLowerCase().replace(/^°/, '');
 
   // Temperature is special-cased (non-linear conversions).
   const TEMP_UNITS = new Set(['c', 'celsius', 'f', 'fahrenheit', 'k', 'kelvin']);
@@ -225,7 +227,7 @@ function search(ctx) {
     const r = tryUnitConvert(q);
     if (r) results.push(r);
   }
-  if (qa.webSearch) {
+  if (qa.webSearch && !['calc', 'calculator', 'convert'].includes(ctx.scope)) {
     const r = tryWebSearch(q, qa.webSearchEngine);
     if (r) results.push(r);
   }

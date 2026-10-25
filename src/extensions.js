@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const vm = require('vm');
+const { Worker } = require('worker_threads');
 const { app } = require('electron');
 
 let loadedExtensions = [];
@@ -12,6 +12,7 @@ function extensionsDir() {
 }
 
 function loadExtensions() {
+  stopExtensions();
   loadedExtensions = [];
   const dir = extensionsDir();
   if (!fs.existsSync(dir)) return loadedExtensions;
@@ -29,24 +30,41 @@ function loadExtensions() {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
       if (!manifest.name || manifest.enabled === false) continue;
       const code = fs.readFileSync(indexPath, 'utf8');
-      const sandbox = {
-        module: { exports: {} },
-        exports: {},
-        console,
-        JSON,
-        Math,
-        Date,
-        String,
-        Number,
-        Array,
-        Object,
-        RegExp,
+      const worker = new Worker(path.join(__dirname, 'extension-worker.js'), {
+        workerData: { code, filename: indexPath }, resourceLimits: { maxOldGenerationSizeMb: 32 },
+      });
+      let nextId = 0;
+      let stopped = false;
+      const pending = new Map();
+      const fail = (error) => {
+        stopped = true;
+        for (const request of pending.values()) { clearTimeout(request.timer); request.reject(error); }
+        pending.clear();
       };
-      vm.runInNewContext(code, sandbox, { filename: indexPath, timeout: 1000 });
-      const provider = sandbox.module.exports;
-      if (provider && typeof provider.search === 'function') {
-        loadedExtensions.push({ manifest, provider, path: extPath });
-      }
+      worker.on('message', (message) => {
+        const request = pending.get(message.id);
+        if (!request) return;
+        clearTimeout(request.timer); pending.delete(message.id);
+        if (message.error) request.reject(new Error(`${manifest.name}: ${message.error}`));
+        else request.resolve(message.results);
+      });
+      worker.on('error', fail);
+      worker.on('exit', () => fail(new Error(`${manifest.name}: extension stopped.`)));
+      worker.unref();
+      const provider = { search(ctx) {
+        if (stopped) return Promise.resolve([]);
+        // Keep plugin code and its microtasks off the Electron main thread.
+        const input = JSON.stringify({ q: ctx.q, qLower: ctx.qLower, scope: ctx.scope, isEmpty: ctx.isEmpty });
+        return new Promise((resolve, reject) => {
+          const id = ++nextId;
+          const timer = setTimeout(() => {
+            fail(new Error(`${manifest.name}: extension timed out.`)); worker.terminate();
+          }, 2000);
+          pending.set(id, { resolve, reject, timer });
+          worker.postMessage({ id, input });
+        });
+      } };
+      loadedExtensions.push({ manifest, provider, worker, path: extPath });
     } catch (e) {
       console.error('Extension load failed:', entry.name, e.message);
     }
@@ -68,4 +86,6 @@ function listExtensions() {
   }));
 }
 
-module.exports = { loadExtensions, getExtensionProviders, listExtensions, extensionsDir };
+function stopExtensions() { return Promise.all(loadedExtensions.map((e) => e.worker.terminate())); }
+
+module.exports = { loadExtensions, getExtensionProviders, listExtensions, extensionsDir, stopExtensions };

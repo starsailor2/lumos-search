@@ -56,7 +56,7 @@ const extraExcluded = (workerData && Array.isArray(workerData.excludedDirs) ? wo
 // Merge logic: SKIP = new Set([...builtins, ...extraExcluded]) unless
 // workerData.skipDirs is a non-empty array, in which case SKIP = new Set(workerData.skipDirs.map(lowercase)).
 const SKIP_DIRS = (workerData && Array.isArray(workerData.skipDirs) && workerData.skipDirs.length)
-  ? new Set(workerData.skipDirs.filter((d) => typeof d === 'string').map((d) => d.toLowerCase()))
+  ? new Set([...workerData.skipDirs.filter((d) => typeof d === 'string').map((d) => d.toLowerCase()), ...extraExcluded])
   : new Set([...BUILTIN_SKIP_DIRS, ...extraExcluded]);
 
 // Detection for virtual environments, package directories, and build noise
@@ -86,10 +86,10 @@ function isNoiseDir(name, fullPath) {
 
 // Junction and symlink loop prevention
 const visitedRealPaths = new Set();
-const MAX_VISITED_REAL_PATHS = 500000;
 
 let batch = [];
 let total = 0;
+const unreadable = [];
 
 function emit(p, flag) {
   batch.push([p, flag]);
@@ -133,36 +133,31 @@ function shortcutDirs() {
 }
 
 async function walk(root, { appsOnly = false, lnkAsApps = false } = {}) {
+  try { if (!fs.statSync(root).isDirectory()) return false; } catch { unreadable.push(root); return false; }
   const stack = [root];
   let dirsVisited = 0;
+  let rootRead = false;
   while (stack.length) {
     const dir = stack.pop();
+    let real;
+    try { real = `${appsOnly}:` + fs.realpathSync(dir).toLowerCase(); } catch { unreadable.push(dir); continue; }
+    if (visitedRealPaths.has(real)) continue;
+    visitedRealPaths.add(real);
     let entries;
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch { continue; } // access denied, gone, etc.
+      if (dir === root) rootRead = true;
+    } catch { unreadable.push(dir); continue; }
 
     for (const ent of entries) {
       const name = ent.name;
       let full;
       try { full = path.join(dir, name); } catch { continue; }
 
-      let isDir = ent.isDirectory();
+      const isDir = ent.isDirectory();
       if (ent.isSymbolicLink()) {
-        if (visitedRealPaths.size >= MAX_VISITED_REAL_PATHS) {
-          continue; // cap reached: skip symlinks
-        }
-        try {
-          const real = fs.realpathSync(full);
-          if (visitedRealPaths.has(real)) continue;
-          const st = fs.statSync(real);
-          if (st.isDirectory()) {
-            visitedRealPaths.add(real);
-            isDir = true;
-          }
-        } catch {
-          continue; // broken link
-        }
+        // Junctions can escape selected roots or cycle back into an ancestor.
+        continue;
       }
 
       if (isDir) {
@@ -195,6 +190,7 @@ async function walk(root, { appsOnly = false, lnkAsApps = false } = {}) {
       await new Promise((r) => setImmediate(r));
     }
   }
+  return rootRead;
 }
 
 // 'full' (default) crawls shortcut dirs + every drive / custom root list.
@@ -204,10 +200,13 @@ const MODE = (workerData && workerData.mode === 'hot') ? 'hot' : 'full';
 
 (async () => {
   try {
+    const refreshedRoots = [];
     if (MODE === 'hot') {
       // No Start Menu scan in hot mode — those entries barely change. Desktop
       // shortcuts keep their app ranking via lnkAsApps above.
-      for (const root of (CUSTOM_ROOTS || [])) await walk(root, { lnkAsApps: true });
+      for (const root of (CUSTOM_ROOTS || [])) {
+        if (await walk(root, { lnkAsApps: true })) refreshedRoots.push(root);
+      }
       flush();
     } else {
       // 1) Apps first — Start Menu and Desktop shortcuts behave like app launchers
@@ -220,10 +219,9 @@ const MODE = (workerData && workerData.mode === 'hot') ? 'hot' : 'full';
       flush();
     }
 
-    parentPort.postMessage({ type: 'done', total, mode: MODE });
+    parentPort.postMessage({ type: 'done', total, mode: MODE, roots: refreshedRoots, unreadable });
   } catch (err) {
     flush();
     parentPort.postMessage({ type: 'error', error: String(err && err.stack || err) });
-    parentPort.postMessage({ type: 'done', total, mode: MODE });
   }
 })();

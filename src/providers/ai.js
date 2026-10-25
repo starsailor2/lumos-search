@@ -20,7 +20,7 @@ function chatCompletion(config, messages) {
     const req = mod.request({
       hostname: url.hostname,
       port: url.port,
-      path: url.pathname,
+      path: url.pathname + url.search,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -29,19 +29,28 @@ function chatCompletion(config, messages) {
       },
     }, (res) => {
       let data = '';
-      res.on('data', (c) => { data += c; });
+      res.on('error', reject);
+      res.on('data', (c) => {
+        data += c;
+        if (data.length > 2_000_000) req.destroy(new Error('AI response is too large.'));
+      });
       res.on('end', () => {
         try {
           const parsed = JSON.parse(data);
-          resolve(parsed.choices && parsed.choices[0] && parsed.choices[0].message
-            ? parsed.choices[0].message.content
-            : data);
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            reject(new Error(parsed.error?.message || `AI request failed (${res.statusCode}).`));
+            return;
+          }
+          const answer = parsed.choices?.[0]?.message?.content;
+          if (typeof answer !== 'string' || !answer.trim()) reject(new Error('AI returned no text answer.'));
+          else resolve(answer);
         } catch {
-          resolve(data);
+          reject(new Error(`Invalid AI response (${res.statusCode}).`));
         }
       });
     });
     req.on('error', reject);
+    req.setTimeout(30000, () => req.destroy(new Error('AI request timed out. Try again.')));
     req.write(body);
     req.end();
   });

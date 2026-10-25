@@ -31,11 +31,12 @@ function updateBaseEntry(base, entry) {
 function loadFrecency() {
   try {
     const raw = JSON.parse(fs.readFileSync(frecencyPath(), 'utf8'));
-    entries = (raw && typeof raw.entries === 'object' && raw.entries) ? raw.entries : {};
+    entries = Object.fromEntries(Object.entries(raw?.entries || {}).filter(([, e]) =>
+      e && Number.isFinite(e.count) && e.count > 0 && Number.isFinite(e.lastUsed)));
     entriesByBase.clear();
     if (raw && raw.entriesByBase && typeof raw.entriesByBase === 'object') {
       for (const [k, v] of Object.entries(raw.entriesByBase)) {
-        updateBaseEntry(k, v);
+        if (v && Number.isFinite(v.count) && Number.isFinite(v.lastUsed)) updateBaseEntry(k, v);
       }
     } else {
       for (const [p, e] of Object.entries(entries)) {
@@ -71,7 +72,7 @@ function flushFrecency() {
 
 function recordLaunch(p) {
   if (typeof p !== 'string' || !p) return;
-  const prev = entries[p];
+  const prev = Object.hasOwn(entries, p) ? entries[p] : null;
   const entry = { count: (prev && prev.count || 0) + 1, lastUsed: Date.now() };
   entries[p] = entry;
 

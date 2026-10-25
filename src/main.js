@@ -2,34 +2,31 @@
 
 const {
   app, BrowserWindow, globalShortcut, ipcMain, shell, clipboard,
-  Tray, Menu, nativeImage, screen, dialog, systemPreferences, powerMonitor
+  Tray, Menu, nativeImage, screen, dialog, powerMonitor, nativeTheme
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { execSync } = require('child_process');
 const { Worker } = require('worker_threads');
 const { loadConfig, getConfig, updateConfig } = require('./config');
 const { loadFrecency, recordLaunch, resetFrecency, frecencyBoost, flushFrecency } = require('./frecency');
 const { startClipboardWatch, applyRetentionChange, clearHistory } = require('./providers/clipboard');
 const { getIcon } = require('./icons');
 const { createSettingsWindow } = require('./settings-window');
-const { captureForeground, restoreAndPaste } = require('./paste');
-const { buildSearchIndex } = require('./search-index');
+const { restoreAndPaste } = require('./paste');
 const { parseScope, loadProviders } = require('./scope');
-const { loadExtensions, getExtensionProviders, listExtensions, extensionsDir } = require('./extensions');
+const { loadExtensions, getExtensionProviders, listExtensions, extensionsDir, stopExtensions } = require('./extensions');
 const { runSystemCommand } = require('./providers/system');
 const { focusWindow, snapWindow } = require('./providers/windows');
 const { killProcess } = require('./providers/process');
 const { chatCompletion } = require('./providers/ai');
-const { loadIntentMemory, recordIntent, getIntent, getRecentIntents } = require('./intent-memory');
+const { loadIntentMemory, recordIntent, getIntent, getRecentIntents, clearIntentMemory, flushIntentMemory } = require('./intent-memory');
 const PROVIDERS = require('./providers');
 
 const COMPACT_W = 600;
 const COMPACT_H = 60;
-const EXPANDED_W = 680;
-const EXPANDED_H = 490;
-let isWindowExpanded = false;
+let resizeTimer = null;
+let resizeTarget = COMPACT_H;
 const APP_ICON = path.join(__dirname, '..', 'public', 'icon.ico');
 const TEXT_PREVIEW_EXTS = new Set(['.txt', '.md', '.json', '.log', '.csv', '.js', '.ts', '.py', '.yml', '.yaml', '.xml', '.ini', '.cfg', '.conf']);
 
@@ -38,78 +35,62 @@ let tray = null;
 let indexerWorker = null;
 let config = null;
 let rebuildPending = false;
-let searchIndex = null;
 let lastIndexUpdate = Date.now();
 let lastSearchQuery = '';
+let modalOpen = false;
 
 const idx = {
   paths: [],
   names: [],
   flags: [],
-  bigrams: new Map(),
+  parents: [],
+  parentPaths: new Map(),
+  filtered: true,
   count: 0,
   status: 'starting',
+  byPath: new Map(),
 };
 
 const NOISE_PATH_REGEX = /[\\/](\.venv|venv|env|\.env|virtualenv|\.virtualenvs|\.conda|conda-env|site-packages|dist-packages|node_modules|bower_components|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.tox|\.nox|\.eggs|pip-wheel-metadata|\.git|\.next|\.nuxt|\.turbo|\.cargo|\.rustup|\.gradle|\.m2|\.nuget|obj|cmake-build-debug|cmake-build-release|\.vs|\.idea|ipch)[\\/]/i;
 
-function addEntryBigrams(map, name, i) {
-  if (!name || name.length < 2) return;
-  const seen = new Set();
-  for (let j = 0; j < name.length - 1; j++) {
-    const bg = name.slice(j, j + 2);
-    if (!seen.has(bg)) {
-      seen.add(bg);
-      let list = map.get(bg);
-      if (!list) {
-        list = [];
-        map.set(bg, list);
-      }
-      list.push(i);
-    }
-  }
-}
-
-function addEntries(items) {
+function addEntries(items, target = idx) {
+  const idx = target;
   for (let i = 0; i < items.length; i++) {
     const [p, f] = items[i];
-    if (f !== 2 && NOISE_PATH_REGEX.test(p)) continue;
+    const key = path.normalize(p).toLowerCase();
+    if (idx.byPath.has(key)) {
+      const existing = idx.byPath.get(key);
+      if (f === 2) {
+        idx.flags[existing] = 2;
+        idx.names[existing] = path.basename(p).replace(/\.(lnk|url|appref-ms)$/i, '').toLowerCase();
+      }
+      continue;
+    }
+    if (!config?.skipDirs?.length && f !== 2 && NOISE_PATH_REGEX.test(p)) continue;
+    idx.byPath.set(key, idx.paths.length);
     idx.paths.push(p);
+    const parent = path.dirname(p).toLowerCase();
+    if (!idx.parentPaths.has(parent)) idx.parentPaths.set(parent, parent);
+    idx.parents.push(idx.parentPaths.get(parent));
     const base = p.slice(Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')) + 1);
     const n = (f === 2 ? base.replace(/\.(lnk|url|appref-ms)$/i, '') : base).toLowerCase();
     idx.names.push(n);
     idx.flags.push(f);
-    addEntryBigrams(idx.bigrams, n, idx.paths.length - 1);
   }
   idx.count = idx.paths.length;
-}
-
-function rebuildBigrams() {
-  const map = new Map();
-  for (let i = 0; i < idx.count; i++) {
-    addEntryBigrams(map, idx.names[i], i);
-  }
-  idx.bigrams = map;
 }
 
 function resetIndex() {
   idx.paths = [];
   idx.names = [];
   idx.flags = [];
-  idx.bigrams = new Map();
+  idx.parents = [];
+  idx.parentPaths.clear();
   idx.count = 0;
+  idx.byPath.clear();
 }
 
-function rebuildSearchIndex() {
-  try {
-    searchIndex = buildSearchIndex(idx);
-  } catch (e) {
-    console.error('search index build failed:', e);
-    searchIndex = null;
-  }
-}
-
-function search(query) {
+async function search(query) {
   const raw = String(query || '').trim();
   lastSearchQuery = raw;
   const scoped = parseScope(raw);
@@ -135,20 +116,34 @@ function search(query) {
     idx,
     config,
     frecencyBoost,
-    searchIndex,
     scope: scoped.scope,
     isEmpty: isEmpty || (scoped.scope && !q),
     learnedIntent,
   };
 
   let providers = scoped.providers ? loadProviders(scoped.providers) : PROVIDERS;
-  const extProviders = getExtensionProviders();
+  const extProviders = scoped.scope ? [] : getExtensionProviders();
   providers = providers.concat(extProviders);
 
-  let all = [];
-  for (const provider of providers) {
-    try { all = all.concat(provider.search(ctx) || []); } catch (e) { console.error('provider error:', e); }
-  }
+  const responses = await Promise.all(providers.map(async (provider) => {
+    try { return await provider.search(ctx) || []; }
+    catch (e) { console.error('provider error:', e); return []; }
+  }));
+  let all = responses.flat().filter((r) => r && typeof r.id === 'string' && typeof r.title === 'string' &&
+    typeof r.type === 'string' && Number.isFinite(r.score) && Array.isArray(r.actions) &&
+    r.actions.some((action) => KNOWN_ACTIONS.has(action))).map((r) => {
+      let end = 0;
+      return {
+        ...r, subtitle: typeof r.subtitle === 'string' ? r.subtitle : '',
+        data: r.data && typeof r.data === 'object' ? r.data : {},
+        actions: r.actions.filter((action) => KNOWN_ACTIONS.has(action)),
+        matchRanges: Array.isArray(r.matchRanges) ? r.matchRanges.filter((range) => {
+          if (!Array.isArray(range) || !Number.isInteger(range[0]) || !Number.isInteger(range[1]) ||
+            range[0] < end || range[1] <= range[0] || range[1] > r.title.length) return false;
+          end = range[1]; return true;
+        }) : [],
+      };
+    });
 
   // Apply learned intent boost (+450 points, guaranteed #1 surface)
   if (learnedIntent) {
@@ -192,27 +187,32 @@ function search(query) {
 
 const cacheFile = () => path.join(app.getPath('userData'), 'index-cache.txt');
 
-function loadCache() {
+async function loadCache() {
   try {
-    const raw = fs.readFileSync(cacheFile(), 'utf8');
-    const lines = raw.split('\n');
-    const items = [];
+    const readline = require('readline');
+    const stream = fs.createReadStream(cacheFile(), { encoding: 'utf8' });
+    const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
+    let items = [];
     let hadNoise = false;
-    for (const line of lines) {
+    for await (const line of lines) {
       if (line.length < 3) continue;
       const tabIdx = line.indexOf('\t');
       if (tabIdx < 0) continue;
       const flagStr = line.slice(0, tabIdx);
       const filePath = line.slice(tabIdx + 1);
       const flag = Number(flagStr) || 0;
-      if (flag !== 2 && NOISE_PATH_REGEX.test(filePath)) {
+      if (!config?.skipDirs?.length && flag !== 2 && NOISE_PATH_REGEX.test(filePath)) {
         hadNoise = true;
         continue;
       }
       items.push([filePath, flag]);
+      if (items.length >= 4000) {
+        addEntries(items); items = [];
+        await new Promise((resolve) => setImmediate(resolve));
+      }
     }
-    if (items.length) {
-      addEntries(items);
+    addEntries(items);
+    if (idx.count) {
       idx.status = 'ready';
       pushStatus();
       if (hadNoise) saveCache(); // Rewrite cleaned cache without noise
@@ -220,41 +220,22 @@ function loadCache() {
   } catch { /* no cache yet */ }
 }
 
+let cacheSave = Promise.resolve();
 function saveCache() {
-  try {
-    const chunks = [];
-    for (let i = 0; i < idx.count; i++) chunks.push(idx.flags[i] + '\t' + idx.paths[i]);
-    fs.writeFileSync(cacheFile(), chunks.join('\n'), 'utf8');
-  } catch { /* non-fatal */ }
-}
-
-// ---------------------------------------------------------------------------
-// Drive detection: wmic / PowerShell with fallback to A-Z existsSync scan.
-// Runs only once per full crawl start.
-// ---------------------------------------------------------------------------
-function detectDrives() {
-  if (process.platform !== 'win32') return null;
-  try {
-    const stdout = execSync('powershell -NoProfile -Command "(Get-CimInstance Win32_LogicalDisk).DeviceID"', {
-      encoding: 'utf8', timeout: 4000, stdio: ['ignore', 'pipe', 'ignore']
-    });
-    const matches = stdout.match(/[A-Z]:/gi);
-    if (matches && matches.length) {
-      return [...new Set(matches.map((d) => d.toUpperCase() + '\\'))];
-    }
-  } catch { /* try wmic fallback */ }
-
-  try {
-    const stdout = execSync('wmic logicaldisk get name', {
-      encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore']
-    });
-    const matches = stdout.match(/[A-Z]:/gi);
-    if (matches && matches.length) {
-      return [...new Set(matches.map((d) => d.toUpperCase() + '\\'))];
-    }
-  } catch { /* fallback to indexer's default A-Z scan */ }
-
-  return null;
+  const snapshot = { paths: idx.paths, flags: idx.flags, count: idx.count };
+  cacheSave = cacheSave.catch(() => {}).then(async () => {
+    const temporary = cacheFile() + '.tmp';
+    const file = await fs.promises.open(temporary, 'w');
+    try {
+      for (let start = 0; start < snapshot.count; start += 4000) {
+        const lines = [];
+        for (let i = start; i < Math.min(start + 4000, snapshot.count); i++) lines.push(snapshot.flags[i] + '\t' + snapshot.paths[i]);
+        await file.writeFile(lines.join('\n') + '\n');
+      }
+    } finally { await file.close(); }
+    await fs.promises.rename(temporary, cacheFile());
+  }).catch((error) => console.error('Index cache save failed:', error.message));
+  return cacheSave;
 }
 
 // ---------------------------------------------------------------------------
@@ -264,17 +245,21 @@ function detectDrives() {
 let lastFullCrawl = 0;
 let lastHotCrawl = 0;
 
-function startIndexing() { spawnIndexer({ mode: 'full' }); }
+function startIndexing() {
+  if (indexerWorker) { rebuildPending = true; return; }
+  spawnIndexer({ mode: 'full' });
+}
 
 function spawnIndexer(opts) {
   if (indexerWorker) return; // one crawl at a time; the scheduler retries later
   const mode = opts.mode === 'hot' ? 'hot' : 'full';
+  idx.status = 'indexing';
   if (mode === 'full') {
     lastFullCrawl = Date.now();
     lastHotCrawl = Date.now(); // a full crawl covers the hot roots too
-    idx.status = idx.count ? 'ready' : 'indexing';
   }
-  const drives = mode === 'full' ? detectDrives() : null;
+  // Drive probing belongs in the worker; launching PowerShell here freezes the UI.
+  const drives = null;
   indexerWorker = new Worker(path.join(__dirname, 'indexer.js'), {
     workerData: {
       roots: mode === 'hot' ? opts.roots : config.indexedRoots,
@@ -284,48 +269,54 @@ function spawnIndexer(opts) {
       mode,
     },
   });
+  const worker = indexerWorker;
+  const streaming = mode === 'full' && idx.count === 0;
+  const nextIndex = streaming ? idx : { paths: [], names: [], flags: [], parents: [], parentPaths: new Map(), count: 0, byPath: new Map(), filtered: true };
   let freshItems = [];
+  let scanned = 0;
+  let failed = false;
+  let completed = false;
+  const finish = () => {
+    if (indexerWorker !== worker) return;
+    indexerWorker = null;
+    if (!completed) { idx.status = 'error'; pushStatus(); }
+    if (rebuildPending) { rebuildPending = false; startIndexing(); }
+  };
+  pushStatus();
 
   indexerWorker.on('message', (msg) => {
     if (msg.type === 'batch') {
-      freshItems.push(...msg.items);
-      if (mode === 'full' && idx.count === 0) { // first ever run: stream results live
-        addEntries(msg.items);
-        idx.status = 'indexing';
-      }
-      if (mode === 'full') pushStatus(freshItems.length);
+      scanned += msg.items.length;
+      if (mode === 'full') addEntries(msg.items, nextIndex);
+      else for (const item of msg.items) freshItems.push(item);
+      if (mode === 'full') pushStatus(scanned);
     } else if (msg.type === 'done') {
+      if (failed) return;
+      completed = true;
       lastIndexUpdate = Date.now();
       if (mode === 'full') {
-        resetIndex();
-        addEntries(freshItems);
+        if (!streaming) Object.assign(idx, nextIndex);
         idx.status = 'ready';
         pushStatus();
       } else {
         // Hot refresh: swap out only the entries under the refreshed roots
-        removeIndexedRoots(opts.roots);
+        removeIndexedRoots(msg.roots || opts.roots, msg.unreadable);
         addEntries(freshItems);
+        idx.status = 'ready';
+        pushStatus();
       }
       freshItems = [];
       saveCache();
-      indexerWorker = null;
-      if (rebuildPending) {
-        rebuildPending = false;
-        startIndexing();
-      }
     } else if (msg.type === 'error') {
+      failed = true;
       console.error('indexer:', msg.error);
     }
   });
   indexerWorker.on('error', (e) => {
     console.error(e);
-    indexerWorker = null;
-    idx.status = 'ready';
-    if (rebuildPending) {
-      rebuildPending = false;
-      startIndexing();
-    }
+    failed = true;
   });
+  worker.once('exit', finish);
 }
 
 // ---------------------------------------------------------------------------
@@ -338,25 +329,29 @@ const HOT_FOLDERS = ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Videos', 
 
 function hotRoots() {
   if (Array.isArray(config.indexedRoots) && config.indexedRoots.length) {
-    return config.indexedRoots.slice(0, 12);
+    return config.indexedRoots.slice();
   }
   const home = os.homedir();
   const roots = [];
   for (const f of HOT_FOLDERS) {
-    const p = path.join(home, f);
+    let p = path.join(home, f);
+    try { p = app.getPath(f.toLowerCase()); } catch { /* fallback for older profiles */ }
     try { if (fs.statSync(p).isDirectory()) roots.push(p); } catch { /* not present */ }
   }
   return roots;
 }
 
 // Drop every indexed entry whose path lies under one of `roots`.
-function removeIndexedRoots(roots) {
+function removeIndexedRoots(roots, unreadable = []) {
   if (!roots || !roots.length) return;
   const norm = roots.map((r) => r.toLowerCase().replace(/[\\/]+$/, ''));
-  const paths = [], names = [], flags = [];
+  const paths = [], names = [], flags = [], parents = [];
   for (let i = 0; i < idx.count; i++) {
     const p = idx.paths[i];
     const lower = p.toLowerCase();
+    if (unreadable.some((r) => lower === r.toLowerCase() || lower.startsWith(r.toLowerCase().replace(/[\\/]+$/, '') + path.sep))) {
+      paths.push(p); names.push(idx.names[i]); flags.push(idx.flags[i]); parents.push(idx.parents[i]); continue;
+    }
     let under = false;
     for (let r = 0; r < norm.length; r++) {
       if (lower === norm[r] || lower.startsWith(norm[r] + '\\') || lower.startsWith(norm[r] + '/')) {
@@ -368,12 +363,15 @@ function removeIndexedRoots(roots) {
     paths.push(p);
     names.push(idx.names[i]);
     flags.push(idx.flags[i]);
+    parents.push(idx.parents[i]);
   }
   idx.paths = paths;
   idx.names = names;
   idx.flags = flags;
+  idx.parents = parents;
+  idx.parentPaths = new Map(parents.map((p) => [p, p]));
   idx.count = paths.length;
-  rebuildBigrams();
+  idx.byPath = new Map(paths.map((p, i) => [path.normalize(p).toLowerCase(), i]));
 }
 
 function startRefreshSchedule() {
@@ -450,10 +448,17 @@ function createWindow() {
     },
   };
   if (process.platform === 'win32') {
-    winOpts.backgroundMaterial = 'acrylic';
-    winOpts.roundedCorners = true;
+    // The CSS pill owns its shape; native acrylic paints a rectangular backdrop.
+    winOpts.roundedCorners = false;
   }
   win = new BrowserWindow(winOpts);
+  let rendererRestarts = 0;
+  win.webContents.on('render-process-gone', (_event, details) => {
+    if (['crashed', 'oom', 'abnormal-exit'].includes(details.reason) && rendererRestarts++ < 2) win.webContents.reload();
+  });
+  win.webContents.on('did-fail-load', (_event, code, description) => {
+    if (code !== -3) console.error('Launcher failed to load:', description);
+  });
 
   const isDev = process.env.ELECTRON_RENDERER_URL;
   if (isDev) {
@@ -462,33 +467,70 @@ function createWindow() {
     const builtPath = path.join(__dirname, '..', 'dist', 'renderer', 'launcher', 'index.html');
     win.loadFile(builtPath);
   }
-  win.on('blur', () => hideWindow());
-  win.setAlwaysOnTop(true, 'screen-saver');
+  win.on('blur', () => { if (!modalOpen) hideWindow(); });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (event) => event.preventDefault());
+  win.on('closed', () => { win = null; });
+  win.setAlwaysOnTop(true, 'floating');
 }
 
-function positionWindow(width = (isWindowExpanded ? EXPANDED_W : COMPACT_W), height = (isWindowExpanded ? EXPANDED_H : COMPACT_H)) {
+function positionWindow(width = COMPACT_W, height = COMPACT_H) {
   if (!win || win.isDestroyed()) return;
   const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  width = Math.min(width, workArea.width);
+  height = Math.min(height, workArea.height);
   const x = Math.round(workArea.x + (workArea.width - width) / 2);
-  const y = Math.round(workArea.y + workArea.height * (isWindowExpanded ? 0.14 : 0.18));
+  const y = Math.min(workArea.y + workArea.height - height, Math.round(workArea.y + workArea.height * 0.18));
   win.setBounds({ x, y, width, height });
 }
 
+function resizeLauncher(requestedHeight, animate = true) {
+  if (!win || win.isDestroyed() || !Number.isFinite(requestedHeight)) return;
+  const bounds = win.getBounds();
+  const { workArea } = screen.getDisplayMatching(bounds);
+  const available = Math.max(COMPACT_H, workArea.y + workArea.height - bounds.y);
+  const height = Math.round(Math.min(Math.max(COMPACT_H, requestedHeight), 600, available));
+  if (height === resizeTarget && resizeTimer) return;
+  clearTimeout(resizeTimer);
+  resizeTimer = null;
+  resizeTarget = height;
+  if (height === bounds.height) return;
+  if (!animate || config.appearance.animations === false || !win.isVisible()) {
+    win.setBounds({ height });
+    return;
+  }
+  const started = Date.now();
+  const step = () => {
+    if (!win || win.isDestroyed()) { resizeTimer = null; return; }
+    const progress = Math.min(1, (Date.now() - started) / 220);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    // Only the bottom edge moves; the input keeps its width, position and focus.
+    win.setBounds({ height: Math.round(bounds.height + (height - bounds.height) * eased) });
+    resizeTimer = progress < 1 ? setTimeout(step, 16) : null;
+  };
+  step();
+}
+
 function showWindow() {
-  captureForeground();
-  isWindowExpanded = false;
+  if (!win || win.isDestroyed()) return;
+  if (win.isVisible()) { win.focus(); return; }
+  clearTimeout(resizeTimer); resizeTimer = null; resizeTarget = COMPACT_H;
   positionWindow(COMPACT_W, COMPACT_H);
   win.show();
   win.focus();
-  win.webContents.send('window-shown', { appearance: config.appearance });
+  const notify = () => win && !win.isDestroyed() && win.webContents.send('window-shown', { appearance: getAppearance() });
+  if (win.webContents.isLoadingMainFrame()) win.webContents.once('did-finish-load', notify);
+  else notify();
   pushStatus();
 }
 
 function hideWindow() {
+  clearTimeout(resizeTimer); resizeTimer = null;
   if (win && win.isVisible()) win.hide();
 }
 
 function toggleWindow() {
+  if (!win || win.isDestroyed()) return;
   if (win.isVisible()) hideWindow();
   else showWindow();
 }
@@ -557,35 +599,51 @@ const KNOWN_ACTIONS = new Set([
   'run-workflow', 'pin-favourite',
 ]);
 
+async function confirmAction(message, label) {
+  modalOpen = true;
+  try {
+    const result = await dialog.showMessageBox(win, {
+      type: 'warning', message, buttons: ['Cancel', label], defaultId: 0, cancelId: 0, noLink: true,
+    });
+    return result.response === 1;
+  } finally { modalOpen = false; }
+}
+
 ipcMain.handle('search', (_e, q) => {
   const query = String(q || '').slice(0, 500);
   if (query.trim()) recordSearch(query.trim());
   return search(query);
 });
 
-ipcMain.on('run-action', async (_e, payload) => {
+ipcMain.handle('run-action', async (_e, payload) => {
+  try {
   if (!payload || typeof payload !== 'object') return;
   const { action, result } = payload;
   if (!KNOWN_ACTIONS.has(action) || !result || typeof result !== 'object') return;
   const data = result.data || {};
 
-  // Learn user intent for query
-  if (lastSearchQuery && (action === 'open' || action === 'reveal' || action === 'open-external' || action === 'copy')) {
-    recordIntent(lastSearchQuery, result);
-  }
+  const remember = () => {
+    if (lastSearchQuery && ['file', 'folder', 'app', 'game', 'quicklink'].includes(result.type)) recordIntent(lastSearchQuery, result);
+  };
 
   if (action === 'open' && typeof data.path === 'string') {
-    shell.openPath(data.path);
+    const error = await shell.openPath(data.path);
+    if (error) return { error };
+    remember();
     recordLaunch(data.path);
     recordOpen(data.path);
     hideWindow();
   } else if (action === 'reveal' && typeof data.path === 'string') {
     shell.showItemInFolder(data.path);
+    remember();
     hideWindow();
-  } else if (action === 'open-external' && typeof data.url === 'string' && /^https?:\/\//i.test(data.url)) {
-    shell.openExternal(data.url);
+  } else if (action === 'open-external' && typeof data.url === 'string' &&
+    (/^https?:\/\//i.test(data.url) || (result.type === 'game' &&
+      (/^steam:\/\/rungameid\/\d+$/.test(data.url) || /^com\.epicgames\.launcher:\/\/apps\/[\w%.-]+\?action=launch&silent=true$/.test(data.url))))) {
+    await shell.openExternal(data.url);
+    remember();
     hideWindow();
-  } else if (action === 'copy' && typeof data.text === 'string') {
+  } else if (action === 'copy' && typeof data.text === 'string' && !data.image) {
     clipboard.writeText(data.text);
     hideWindow();
   } else if (action === 'copy' && typeof data.image === 'string') {
@@ -609,19 +667,22 @@ ipcMain.on('run-action', async (_e, payload) => {
       win.webContents.send('set-query', '@clip ');
     }
   } else if (action === 'system-run' && data.commandId) {
-    runSystemCommand(data.commandId);
+    if (['shutdown', 'restart', 'empty-trash'].includes(data.commandId) &&
+      !await confirmAction(`Run “${result.title}”? Unsaved work or deleted files may be lost.`, 'Run')) return;
+    await runSystemCommand(data.commandId);
     hideWindow();
   } else if (action === 'window-focus' && data.pid) {
     hideWindow();
-    setTimeout(() => focusWindow(data.pid), 80);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await focusWindow(data.pid);
   } else if (action === 'window-snap' && data.snapId) {
     hideWindow();
-    setTimeout(() => {
-      const map = { 'snap-left': 'left', 'snap-right': 'right', maximize: 'maximize', minimize: 'minimize' };
-      snapWindow(map[data.snapId] || data.snapId);
-    }, 80);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const map = { 'snap-left': 'left', 'snap-right': 'right', maximize: 'maximize', minimize: 'minimize' };
+    await snapWindow(map[data.snapId] || data.snapId);
   } else if (action === 'kill-process' && data.pid) {
-    killProcess(data.pid);
+    if (!await confirmAction(`Stop “${data.name || result.title}”? Unsaved work may be lost.`, 'Stop process')) return;
+    if (!await killProcess(data.pid)) return { error: 'Unable to stop this process.' };
     hideWindow();
   } else if (action === 'ai-ask' && data.prompt) {
     try {
@@ -635,7 +696,6 @@ ipcMain.on('run-action', async (_e, payload) => {
         win.webContents.send('ai-response', { error: e.message });
       }
     }
-    hideWindow();
   } else if (action === 'ai-chat') {
     if (win && !win.isDestroyed()) {
       win.webContents.send('set-query', '@ai ');
@@ -648,23 +708,26 @@ ipcMain.on('run-action', async (_e, payload) => {
       });
     }
     hideWindow();
-  } else if (action === 'run-workflow' && data.steps) {
+  } else if (action === 'run-workflow' && Array.isArray(data.steps)) {
     for (const step of data.steps) {
-      if (step.action === 'open' && step.path) shell.openPath(step.path);
-      else if (step.action === 'copy' && step.text) clipboard.writeText(step.text);
+      const value = step.data || step;
+      if (step.action === 'open' && typeof value.path === 'string') {
+        const error = await shell.openPath(value.path);
+        if (error) return { error };
+      } else if (step.action === 'copy' && typeof value.text === 'string') clipboard.writeText(value.text);
     }
     hideWindow();
+  } else return { error: 'This action has invalid or unsupported data. Check its settings.' };
+  } catch (error) {
+    if (win && !win.isDestroyed() && !win.isVisible()) { win.show(); win.focus(); }
+    return { error: error.message || String(error) };
   }
 });
 
 ipcMain.on('hide-window', () => hideWindow());
 ipcMain.on('open-settings', () => createSettingsWindow());
-ipcMain.on('set-expanded', (_e, expanded) => {
-  if (!win || win.isDestroyed()) return;
-  isWindowExpanded = Boolean(expanded);
-  const w = isWindowExpanded ? EXPANDED_W : COMPACT_W;
-  const h = isWindowExpanded ? EXPANDED_H : COMPACT_H;
-  positionWindow(w, h);
+ipcMain.on('resize-launcher', (_e, payload) => {
+  if (payload && typeof payload === 'object') resizeLauncher(payload.height, payload.animate === true);
 });
 
 ipcMain.handle('get-icon', (_e, payload) => {
@@ -696,15 +759,10 @@ ipcMain.handle('get-meta', async (_e, p) => {
   }
 });
 
-ipcMain.handle('get-appearance', () => {
-  let accent = config.appearance.accentColor;
-  try {
-    if (config.appearance.theme === 'system' && systemPreferences.getAccentColor) {
-      accent = '#' + systemPreferences.getAccentColor();
-    }
-  } catch { /* ignore */ }
-  return { ...config.appearance, accentColor: accent };
-});
+function getAppearance() {
+  return { ...config.appearance };
+}
+ipcMain.handle('get-appearance', getAppearance);
 
 ipcMain.handle('get-config', () => getConfig());
 ipcMain.handle('update-config', (_e, patch) => {
@@ -716,13 +774,15 @@ ipcMain.handle('update-config', (_e, patch) => {
     registerHotkeys();
   }
   if (JSON.stringify(prev.indexedRoots) !== JSON.stringify(config.indexedRoots) ||
-      JSON.stringify(prev.excludedDirs) !== JSON.stringify(config.excludedDirs)) {
+      JSON.stringify(prev.excludedDirs) !== JSON.stringify(config.excludedDirs) ||
+      JSON.stringify(prev.skipDirs) !== JSON.stringify(config.skipDirs)) {
     startIndexing();
   }
-  if (prev.clipboard.retainAcrossRestarts !== config.clipboard.retainAcrossRestarts) {
+  if (JSON.stringify(prev.clipboard) !== JSON.stringify(config.clipboard)) {
     applyRetentionChange(config);
   }
   refreshTray();
+  if (win && !win.isDestroyed()) win.webContents.send('appearance-changed', getAppearance());
   return config;
 });
 ipcMain.handle('pick-folder', async () => {
@@ -730,13 +790,13 @@ ipcMain.handle('pick-folder', async () => {
   if (res.canceled || !res.filePaths.length) return null;
   return res.filePaths[0];
 });
-ipcMain.on('reset-frecency', () => resetFrecency());
+ipcMain.on('reset-frecency', () => { resetFrecency(); clearIntentMemory(); clearAnalytics(); });
 ipcMain.on('rebuild-index', () => startIndexing());
 ipcMain.on('clear-clipboard', () => clearHistory(getConfig));
 ipcMain.handle('get-recent-intents', () => getRecentIntents(8));
 
 const { completeOnboarding } = require('./providers/onboarding');
-const { loadAnalytics, recordSearch, recordOpen } = require('./analytics');
+const { loadAnalytics, recordSearch, recordOpen, clearAnalytics, flushAnalytics } = require('./analytics');
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -744,7 +804,7 @@ if (!gotLock) {
 } else {
   app.on('second-instance', () => showWindow());
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     config = loadConfig();
     loadFrecency();
     loadIntentMemory();
@@ -753,7 +813,7 @@ if (!gotLock) {
     bootstrapExtensions();
     createWindow();
     createTray();
-    loadCache();
+    await loadCache();
     startIndexing();
     startRefreshSchedule(); // hot refresh every 5 min + idle full-crawl every hour
     startClipboardWatch(getConfig);
@@ -763,29 +823,37 @@ if (!gotLock) {
     }
 
     registerHotkeys();
+    nativeTheme.on('updated', () => {
+      if (win && !win.isDestroyed()) win.webContents.send('appearance-changed', getAppearance());
+    });
 
     if (app.isPackaged) {
       try {
         const { autoUpdater } = require('electron-updater');
         autoUpdater.autoDownload = true;
-        autoUpdater.checkForUpdatesAndNotify();
+        autoUpdater.on('error', (error) => console.error('Update check failed:', error.message));
+        autoUpdater.checkForUpdatesAndNotify().catch((error) => console.error('Update check failed:', error.message));
       } catch { /* auto-update optional */ }
     }
   });
 
   app.on('window-all-closed', () => { /* keep running in tray */ });
   app.on('will-quit', () => {
+    clearTimeout(resizeTimer);
     globalShortcut.unregisterAll();
     flushFrecency();
+    flushIntentMemory();
+    flushAnalytics();
+    if (indexerWorker) indexerWorker.terminate();
+    stopExtensions();
   });
 }
 
 module.exports = {
   idx,
   removeIndexedRoots,
-  detectDrives,
   addEntries,
   resetIndex,
-  rebuildBigrams,
   search,
+  resizeLauncher,
 };

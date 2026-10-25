@@ -1,6 +1,7 @@
 // System commands — lock, sleep, shutdown, settings, volume.
 
 const { exec } = require('child_process');
+const { runPowerShell } = require('../powershell');
 
 const COMMANDS = [
   { id: 'lock', title: 'Lock Screen', subtitle: 'System', icon: '🔒', keywords: ['lock', 'screen'] },
@@ -16,20 +17,24 @@ const COMMANDS = [
 ];
 
 function runSystemCommand(id) {
+  if (id.startsWith('volume-')) {
+    const key = { 'volume-up': 175, 'volume-down': 174, 'volume-mute': 173 }[id];
+    if (!key) return Promise.reject(new Error('Unknown volume command.'));
+    return runPowerShell(`Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class MediaKey { [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra); }'; [MediaKey]::keybd_event(${key}, 0, 0, [UIntPtr]::Zero); [MediaKey]::keybd_event(${key}, 0, 2, [UIntPtr]::Zero)`);
+  }
+  if (id === 'sleep') return runPowerShell(`Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class Power { [DllImport("PowrProf.dll", SetLastError=true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool SetSuspendState(bool hibernate, bool force, bool disableWake); }'; if (-not [Power]::SetSuspendState($false, $false, $false)) { throw 'Unable to put this PC to sleep.' }`);
   const cmds = {
     lock: 'rundll32.exe user32.dll,LockWorkStation',
-    sleep: 'rundll32.exe powrprof.dll,SetSuspendState 0,1,0',
     shutdown: 'shutdown /s /t 0',
     restart: 'shutdown /r /t 0',
     settings: 'start ms-settings:',
     display: 'start ms-settings:display',
-    'volume-up': 'powershell -Command "(New-Object -ComObject WScript.Shell).SendKeys([char]175)"',
-    'volume-down': 'powershell -Command "(New-Object -ComObject WScript.Shell).SendKeys([char]174)"',
-    'volume-mute': 'powershell -Command "(New-Object -ComObject WScript.Shell).SendKeys([char]173)"',
     'empty-trash': 'powershell -Command "Clear-RecycleBin -Force -ErrorAction SilentlyContinue"',
   };
   const cmd = cmds[id];
-  if (cmd) exec(cmd, { windowsHide: true });
+  if (!cmd) return Promise.reject(new Error('Unknown system command.'));
+  return new Promise((resolve, reject) => exec(cmd, { windowsHide: true, timeout: 10000 },
+    (error) => error ? reject(error) : resolve()));
 }
 
 function search(ctx) {
