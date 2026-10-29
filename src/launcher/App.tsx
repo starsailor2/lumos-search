@@ -2,29 +2,30 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useLumos } from '../shared/hooks/useLumos';
 import { ACTION_LABELS } from '../shared/types';
 import type { SearchResult } from '../shared/types';
+import { Icon } from './Icon';
 import '../styles/tokens.css';
 import '../styles/fonts.css';
 import './app.css';
 
-function Icon({ name }: { name: string }) {
-  const paths: Record<string, React.ReactNode> = {
-    all: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4.5 4.5" /></>,
-    app: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
-    file: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z" /><path d="M14 3v6h6M8 13h8M8 17h5" /></>,
-    folder: <path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Zm0 1h18" />,
-    clip: <><rect x="5" y="5" width="14" height="16" rx="2" /><rect x="9" y="3" width="6" height="4" rx="1" /><path d="M9 12h6M9 16h4" /></>,
-    emoji: <><circle cx="12" cy="12" r="9" /><path d="M8 14a4 4 0 0 0 8 0M8 9h.01M16 9h.01" /></>,
-    web: <><circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18" /></>,
-    system: <><circle cx="12" cy="12" r="3" /><path d="m9 3-1 3-3 1-2 3 2 2-1 3 3 2 1 3h4l1-3 3-1 2-3-2-2 1-3-3-2-1-3Z" /></>,
-    window: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M9 9v11" /></>,
-    game: <><path d="M7 7h10c3 0 5 10 3 11-2 1-4-3-5-3H9c-1 0-3 4-5 3C2 17 4 7 7 7Z" /><path d="M6 11h4M8 9v4M16 11h.01M18 13h.01" /></>,
-    process: <><path d="M3 12h4l3-8 4 16 3-8h4" /></>,
-    workflow: <><rect x="8" y="2" width="8" height="5" rx="1" /><rect x="2" y="17" width="8" height="5" rx="1" /><rect x="14" y="17" width="8" height="5" rx="1" /><path d="M12 7v5M6 17v-5h12v5" /></>,
-    ai: <path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z" />,
-    calc: <><rect x="5" y="2" width="14" height="20" rx="2" /><path d="M8 6h8M8 11h1M15 11h1M8 15h1M15 15h1M8 19h1M15 19h1" /></>,
-  };
-  const aliases: Record<string, string> = { apps: 'app', files: 'file', folders: 'folder', clipboard: 'clip', settings: 'system', windows: 'window', games: 'game', workflows: 'workflow', websearch: 'web', quicklink: 'web', command: 'system', snippet: 'clip', convert: 'calc' };
-  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[aliases[name] || name] || paths.file}</svg>;
+function ResultIcon({ item, url }: { item: SearchResult; url?: string }) {
+  const file = item.type === 'file';
+  const extension = file ? /\.([^.\\/]+)$/.exec(String(item.data?.path || item.title))?.[1].toLowerCase() || '' : '';
+  const fileStyles = [
+    { extensions: ['pdf'], tone: 'red', icon: 'pdf' },
+    { extensions: ['xls', 'xlsx', 'xlsm', 'csv', 'tsv', 'ods'], tone: 'green', icon: 'spreadsheet' },
+    { extensions: ['zip', '7z', 'rar', 'tar', 'gz'], tone: 'yellow', icon: 'archive' },
+    { extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'], tone: 'violet', icon: 'image' },
+    { extensions: ['js', 'ts', 'jsx', 'tsx', 'py', 'json', 'html', 'css', 'yml', 'yaml', 'rs', 'go', 'java', 'cs'], tone: 'blue', icon: 'code' },
+    { extensions: ['mp3', 'wav', 'flac', 'm4a', 'ogg'], tone: 'pink', icon: 'audio' },
+    { extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm'], tone: 'red', icon: 'video' },
+  ];
+  const style = fileStyles.find((entry) => entry.extensions.includes(extension));
+  const tones: Record<string, string> = { folder: 'yellow', app: 'native', calc: 'green', convert: 'green', clip: 'blue', snippet: 'blue', emoji: 'yellow', websearch: 'blue', quicklink: 'blue', system: 'red', command: 'blue', window: 'blue', process: 'red', workflow: 'yellow', ai: 'violet', game: 'violet', extension: 'green' };
+  return <div className="item-icon-box" data-tone={file ? style?.tone || 'blue' : tones[item.type] || 'blue'} aria-hidden="true">
+    {item.type === 'emoji' ? <span className="emoji-preview">{String(item.data?.text || '')}</span> :
+      url && !file && item.type !== 'folder' ? <img src={url} alt="" className="item-icon-img" /> : <Icon name={file ? style?.icon || 'file' : item.type} />}
+    {file && extension && <span className="file-extension">{extension.slice(0, 4).toUpperCase()}</span>}
+  </div>;
 }
 
 function highlight(title: string, ranges?: [number, number][]) {
@@ -130,6 +131,7 @@ export default function App() {
         await Promise.all(Array.from({ length: Math.min(6, results.length) }, async () => {
           while (id === requestId.current && nextIcon < results.length) {
             const item = results[nextIcon++];
+            if (!['app', 'game'].includes(item.type)) continue;
             const path = typeof item.data?.path === 'string' ? item.data.path : '';
             if (!path) continue;
             const url = icons.current.get(path) || await window.lumos.getIcon(path, item.type).catch(() => null);
@@ -234,7 +236,7 @@ export default function App() {
                 return <div key={result.id} id={`result-${i}`} role="option" aria-selected={selected === i}
                   className={`result-card${selected === i ? ' selected' : ''}`} onClick={() => { setSelected(i); void run(result); }}
                   onMouseMove={() => setSelected(i)} title={result.subtitle}>
-                  <div className="item-icon-box">{iconCache[iconPath] ? <img src={iconCache[iconPath]} alt="" className="item-icon-img" /> : <Icon name={result.type} />}</div>
+                  <ResultIcon item={result} url={iconCache[iconPath]} />
                   <div className="item-text"><div className="item-title">{highlight(result.title, result.matchRanges)}</div>
                     <div className="item-subtitle">{result.subtitle}</div></div>
                   {selected === i && <span className="item-enter" aria-hidden="true">↵</span>}

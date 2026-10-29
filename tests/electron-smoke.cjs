@@ -10,6 +10,12 @@ fs.mkdirSync(fixtures);
 fs.mkdirSync(path.join(fixtures, 'Project Alpha'));
 fs.writeFileSync(path.join(fixtures, 'Quarterly Report Unique.txt'), 'Preview of the quarterly report.');
 for (let i = 0; i < 24; i++) fs.writeFileSync(path.join(fixtures, `Quarterly Report ${i}.txt`), 'Report');
+for (const extension of ['pdf', 'xlsx', 'zip', 'docx', 'png', 'mp4', 'mp3', 'ts']) fs.writeFileSync(path.join(fixtures, `Color Palette.${extension}`), 'Icon test fixture');
+fs.mkdirSync(path.join(fixtures, 'Color Palette Folder'));
+for (const name of ['Camera', 'WhatsApp', 'File Manager']) {
+  fs.writeFileSync(path.join(fixtures, name + '.txt'), 'App priority fixture');
+  fs.mkdirSync(path.join(fixtures, name));
+}
 fs.writeFileSync(path.join(directory, 'config.json'), JSON.stringify({ version: 2, hotkeys: ['F24'], hotkeyFallbacks: [], indexedRoots: [fixtures], clipboard: { enabled: false, retainAcrossRestarts: false }, appearance: { theme: 'dark', accentColor: '#eeeeee' } }));
 app.setPath('userData', directory);
 app.setAppUserModelId('com.starsailor.lumos.smoketest');
@@ -85,6 +91,40 @@ app.whenReady().then(async () => {
     assert(win.getBounds().height > shortHeight);
     fs.writeFileSync(path.join(output, 'launcher-preview.png'), (await win.webContents.capturePage()).toPNG());
     assert.equal(win.getBounds().x, anchor.x); assert.equal(win.getBounds().y, anchor.y); assert.equal(win.getBounds().width, anchor.width);
+    await win.webContents.executeJavaScript('document.querySelector(".action-dock button:last-child").click()');
+    await typeQuery('@files color palette');
+    await until(() => win.webContents.executeJavaScript('document.querySelectorAll(".result-card").length === 8 && document.querySelector("#search-results").getAttribute("aria-busy") === "false"'), 'Colored file results did not render');
+    await until(() => win.webContents.executeJavaScript('Array.from(document.querySelectorAll(".result-card .illustrated-icon")).every((image) => image.complete && image.naturalWidth > 0)'), 'SVG assets did not load');
+    const iconStyles = JSON.parse(await win.webContents.executeJavaScript(`JSON.stringify(Array.from(document.querySelectorAll('.result-card')).map((row) => ({ title: row.querySelector('.item-title').textContent, tone: row.querySelector('.item-icon-box').dataset.tone, artwork: row.querySelector('.illustrated-icon').dataset.icon, filter: getComputedStyle(row.querySelector('.item-icon-box')).filter, color: getComputedStyle(row.querySelector('.item-icon-box')).color })))`));
+    for (const [extension, tone] of Object.entries({ pdf: 'red', xlsx: 'green', zip: 'yellow', docx: 'blue', png: 'violet', mp4: 'red', mp3: 'pink', ts: 'blue' })) {
+      const icon = iconStyles.find((entry) => entry.title === `Color Palette.${extension}`);
+      assert.equal(icon.tone, tone); assert.equal(icon.filter, 'none');
+    }
+    assert.equal(new Set(iconStyles.map((entry) => entry.color)).size, 6);
+    for (const [extension, artwork] of Object.entries({ pdf: 'pdf', xlsx: 'spreadsheet', zip: 'archive', docx: 'file', png: 'image', mp4: 'video', mp3: 'audio', ts: 'code' })) assert.equal(iconStyles.find((entry) => entry.title === `Color Palette.${extension}`).artwork, artwork);
+    await settleHeight();
+    fs.writeFileSync(path.join(output, 'launcher-colors.png'), (await win.webContents.capturePage()).toPNG());
+    await typeQuery('@folders color palette');
+    await until(() => win.webContents.executeJavaScript('Boolean(document.querySelector(".result-card img[data-icon=folder]")?.naturalWidth)'), 'Folder illustration did not render');
+    await settleHeight();
+    fs.writeFileSync(path.join(output, 'launcher-folder.png'), (await win.webContents.capturePage()).toPNG());
+    const registered = await require('../src/providers/apps').listStartApps();
+    for (const [query, name] of [['Camera', 'Camera'], ['WhatsApp', 'WhatsApp'], ['File Manager', 'File Explorer']]) {
+      if (!registered.some((entry) => entry.Name === name)) continue;
+      const { results } = await win.webContents.executeJavaScript(`window.lumos.search(${JSON.stringify(query)})`);
+      assert.equal(results[0].type, 'app', `${query} should show applications first`);
+      assert(results.some((entry) => entry.type === 'app' && entry.title === name), `Missing Windows app: ${name}`);
+      const firstOther = results.findIndex((entry) => entry.type !== 'app');
+      assert(firstOther > 0 && results.slice(firstOther).every((entry) => entry.type !== 'app'), `${query} applications must precede every other result`);
+      assert(results.some((entry) => entry.type === 'file' && entry.title === query + '.txt'));
+      console.log(`PASS app priority: ${query} → ${results[0].title}, followed by files/folders`);
+    }
+    await typeQuery('Camera');
+    await until(() => win.webContents.executeJavaScript('document.querySelector("#search-results").getAttribute("aria-busy") === "false" && document.querySelector("input").value === "Camera" && Boolean(document.querySelector(".result-card"))'), 'Application priority results did not render');
+    await settleHeight();
+    fs.writeFileSync(path.join(output, 'launcher-app-priority.png'), (await win.webContents.capturePage()).toPNG());
+    const notepad = registered.find((entry) => entry.AppID.includes('WindowsNotepad'));
+    if (notepad) assert((await win.webContents.executeJavaScript(`window.lumos.search(${JSON.stringify('@apps ' + notepad.Name)})`)).results.some((entry) => entry.type === 'app' && entry.title === notepad.Name));
     await win.webContents.executeJavaScript('window.lumos.openSettings()');
     await until(() => BrowserWindow.getAllWindows().length === 2, 'Settings did not open');
     const settings = BrowserWindow.getAllWindows().find((w) => w !== win);
@@ -95,7 +135,7 @@ app.whenReady().then(async () => {
     await until(() => win.webContents.executeJavaScript('document.documentElement.dataset.theme === "light"'), 'Appearance changes did not reach launcher');
     assert.equal(await win.webContents.executeJavaScript('document.documentElement.style.getPropertyValue("--accent")'), '#8957e5');
     assert.deepEqual(errors, []);
-    console.log(`PASS Electron: unified search, fixed input/anchor/width, animated heights ${JSON.stringify(samples)}, content resize ${shortHeight} → ${largeHeight}, clear/collapse, preview, fonts, settings, appearance.`);
+    console.log(`PASS Electron: unified search, fixed input/anchor/width, animated heights ${JSON.stringify(samples)}, content resize ${shortHeight} → ${largeHeight}, clear/collapse, preview, fonts, file-type colors, Windows apps, settings, appearance.`);
   } catch (error) {
     console.error(error);
     const win = BrowserWindow.getAllWindows()[0];

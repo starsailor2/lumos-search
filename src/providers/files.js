@@ -169,6 +169,7 @@ async function search(ctx) {
   if (!q && !browse) return [];
   const generation = ++searchGeneration;
   const pathMode = q.includes('\\') || q.includes('/');
+  const appsFirst = Boolean(q) && !ctx.scope && !pathMode;
   const hits = [];
   const tokens = q.split(/\s+/).filter(Boolean);
   const limit = ctx.config?.maxResults || 40;
@@ -192,10 +193,12 @@ async function search(ctx) {
         (idx.flags[i] === 2 ? 640 : 300) + (frecencyBoost?.(idx.paths[i]) || 0);
       if (baseScore <= 0) continue;
       const s = baseScore + ((ctx.learnedIntent?.id === idx.paths[i] || ctx.learnedIntent?.path === idx.paths[i]) ? 450 : 0);
-      if (s <= 0 || (hits.length === limit && s <= hits[hits.length - 1][0])) continue;
+      if (s <= 0) continue;
+      const priority = appsFirst && idx.flags[i] === 2 ? 1 : 0;
       let at = hits.length;
-      while (at > 0 && hits[at - 1][0] < s) at--;
-      hits.splice(at, 0, [s, i, baseScore]);
+      while (at > 0 && (hits[at - 1][3] < priority || (hits[at - 1][3] === priority && hits[at - 1][0] < s))) at--;
+      if (at >= limit) continue;
+      hits.splice(at, 0, [s, i, baseScore, priority]);
       if (hits.length > limit) hits.pop();
     }
     if (start + 1000 < idx.count) await new Promise((resolve) => setImmediate(resolve));

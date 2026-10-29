@@ -2,13 +2,13 @@
 
 <p align="center">
   <strong>Apps, files, and everyday commands. One search bar.</strong><br>
-  A compact Windows launcher with a dark monochrome interface, local indexing,<br>
+  A compact Windows launcher with a dark interface, colorful icons, local indexing,<br>
   and results that expand smoothly beneath your search.
 </p>
 
 <p align="center">
   <kbd>Alt</kbd> + <kbd>,</kbd> to open · <kbd>Alt</kbd> + <kbd>X</kbd> also works<br>
-  <sub>v2.0.2 · Windows desktop · Electron + React</sub>
+  <sub>v2.0.5 · Windows desktop · Electron + React</sub>
 </p>
 
 <p align="center">
@@ -69,6 +69,22 @@ Enter `120 x 4 - 28` and Lumos returns **452**. Choose **Copy** to use the answe
 | Ask or extend | Configure your own AI endpoint and key, or add local search extensions. |
 
 The file index refreshes in the background. Cached startup results, cancellable searches, and bounded result lists help keep the launcher responsive while indexing continues. Typography uses bundled **DM Sans** and **Manrope**, so fonts load offline.
+
+### Colorful SVG illustrations
+
+Twenty bundled SVG icons give folders, documents, PDFs, spreadsheets, archives, photos, video, audio, search, and commands their own recognizable artwork. Layered shapes and coordinated colors stay clear at the launcher's small size. These are vector assets, with no icon font or network download required. Installed desktop apps keep their original full-color icons when available.
+
+<p align="center">
+  <img src="docs/screenshots/05-svg-icons.png" alt="The twenty Lumos SVG illustrations: colorful folders, documents, media, search, apps, and commands on dark cards" width="900">
+</p>
+
+Browse the [individual SVG assets](src/assets/icons/) or the [vector collection sheet](docs/icon-preview.svg).
+
+### Open Windows applications
+
+Type an app name such as `Camera`, `WhatsApp`, or `Calculator`, select it, and press **Enter**. Matching applications appear first, followed by files, folders, and other results. Relevance and usage history still determine the order within each group. Lumos combines indexed Start-menu shortcuts with Windows' registered-app list, including Microsoft Store apps. `File Manager` also finds Windows File Explorer. Use `@apps` to focus the search on applications; `@files`, `@folders`, and direct path queries keep their focused behavior.
+
+Normal app launching does **not** require running Lumos as administrator. Windows handles any elevation prompt required by the target application. App discovery uses [Get-StartApps](https://learn.microsoft.com/en-us/powershell/module/startlayout/get-startapps?view=windowsserver2025-ps) for the current user's installed applications.
 
 ## Run locally
 
@@ -159,9 +175,10 @@ src/launcher/               React search interface
 src/shared/                 Renderer types and hooks
 src/styles/                 Theme tokens and bundled font declarations
 src/assets/fonts/           Local fonts and their licenses
+src/assets/icons/           Twenty standalone SVG illustrations
 extensions/sample-lorem/    Example extension
 scripts/capture-readme.cjs  Real-app screenshot capture
-docs/screenshots/           The four screenshots shown above
+docs/screenshots/           Real app screenshots and icon collection
 tests/                      Regression, smoke, benchmark, and package checks
 ```
 
@@ -175,9 +192,10 @@ After installing dependencies:
 ```powershell
 npm run build
 npx electron scripts/capture-readme.cjs
+npx electron scripts/preview-icons.cjs
 ```
 
-The capture script opens the real launcher, types the example searches, checks the results, and saves four PNGs in `docs/screenshots/`. It uses an isolated temporary profile, disables clipboard capture for that profile, and creates sample documents under the ignored `test-output/readme-demo/` directory.
+The capture script opens the real launcher, types the example searches, checks the results, and saves four PNGs in `docs/screenshots/`. It uses an isolated temporary profile, disables clipboard capture for that profile, and creates sample documents under the ignored `test-output/readme-demo/` directory. The icon preview script renders the twenty SVG assets into the collection sheet and its PNG preview.
 
 </details>
 

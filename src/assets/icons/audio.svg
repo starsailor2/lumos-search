@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs><linearGradient id="audio-card" x1="6" y1="6" x2="42" y2="43" gradientUnits="userSpaceOnUse"><stop stop-color="#F6A3DF"/><stop offset="1" stop-color="#A464E4"/></linearGradient><linearGradient id="audio-note" x1="21" y1="14" x2="31" y2="34" gradientUnits="userSpaceOnUse"><stop stop-color="#FFF4CF"/><stop offset="1" stop-color="#FFC8C8"/></linearGradient></defs>
+  <rect x="5" y="5" width="38" height="38" rx="11" fill="url(#audio-card)"/>
+  <circle cx="24" cy="24" r="15" fill="#7F40AF" opacity=".18"/>
+  <path d="M20 32V16l15-4v17" stroke="url(#audio-note)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m21 21 13-3" stroke="#FFF2DE" stroke-width="3"/>
+  <ellipse cx="15.5" cy="33" rx="6" ry="4.5" fill="#FFF0DA" transform="rotate(-18 15.5 33)"/>
+  <ellipse cx="30.5" cy="30" rx="6" ry="4.5" fill="#FFE1D6" transform="rotate(-18 30.5 30)"/>
+</svg>

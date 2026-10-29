@@ -1,5 +1,25 @@
 # Lumos Search 2.0.1 audit and repair
 
+## 2.0.5 application search priority
+
+Normal name searches now place matching applications before other results, retaining relevance and usage ranking within each group. The bounded index scan reserves app priority before trimming candidates, and the final provider merge applies the same ordering before deduplication and the global result limit. Learned file preferences cannot displace matching apps. Explicit scopes, direct path queries, and empty suggestions keep their existing behavior. `File Manager` matches the registered Windows File Explorer app.
+
+Validation: all 24 regression tests, TypeScript, and native Electron checks passed. Coverage includes crowded file results, app priority across providers, within-group ranking, learned intent, limits, scopes, and path queries. Camera, WhatsApp, and File Manager each returned their installed Windows application ahead of same-name file/folder fixtures. The 100,000-entry and one-million-entry capacity checks remained bounded and continued yielding to the event loop.
+
+## 2.0.4 illustrated SVG icons
+
+Twenty standalone SVG illustrations replace the outline glyphs for files, folders, media, search, and commands. File extensions select the matching artwork; extension badges remain available for specific formats. Native application logos and actual emoji search results retain their existing rendering. Assets are bundled offline and require no new dependency.
+
+Validation: all 22 regression tests, TypeScript, and the native Electron smoke checks passed. Coverage includes local vector content and paint references, eight file-type mappings, successful image loading, folder artwork, and the existing launcher interactions. The full icon collection and native launcher captures were visually inspected. The assets also have a reproducible SVG/PNG preview script.
+
+## 2.0.3 colored icons and Windows applications
+
+The dark launcher now uses file-type colors and extension badges: PDFs red, folders/archives yellow, spreadsheets green, documents/code blue, and media purple/pink. Native desktop app icons keep their original colors instead of being desaturated.
+
+Windows app search now combines Start-menu shortcuts with the current user's cached `Get-StartApps` catalog. Registered applications, including Store apps, launch through the Windows shell using validated app IDs. Their recents preserve the app action instead of treating an application ID as a file path. Administrator access is not required for normal app launching.
+
+Validation includes registered-app matching, ID validation, recents, action routing, and real Electron checks of five file-color categories. Windows returned 182 registered apps on the test PC, and Calculator was activated under a non-elevated Windows token. Other applications' elevation prompts and organization-specific Windows policies remain integration limits.
+
 ## 2.0.2 launcher interaction follow-up
 
 The compact and expanded interfaces now share one persistent input and one 600-pixel-wide surface. Results open below the bar; measured content determines the window height. A 220-ms easing animation changes only the bottom edge, can retarget during typing, and respects disabled animations/reduced-motion preferences. Results scroll within a capped height. Clearing the query collapses the launcher.

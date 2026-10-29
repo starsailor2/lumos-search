@@ -63,6 +63,7 @@ declare global {
 
 export const ACTION_LABELS: Record<string, string> = {
   open: 'Open',
+  'launch-app': 'Open app',
   reveal: 'Show in Explorer',
   copy: 'Copy',
   paste: 'Paste',

@@ -3,8 +3,8 @@
 const SCOPES = {
   files: ['files'],
   file: ['files'],
-  apps: ['files'],
-  app: ['files'],
+  apps: ['apps', 'files'],
+  app: ['apps', 'files'],
   folders: ['files'],
   folder: ['files'],
   web: ['quickactions', 'quicklinks', 'ai'],
@@ -44,6 +44,7 @@ const SCOPES = {
 const PROVIDER_MAP = {
   quickactions: './providers/quickactions',
   files: './providers/files',
+  apps: './providers/apps',
   clipboard: './providers/clipboard',
   emoji: './providers/emoji',
   system: './providers/system',

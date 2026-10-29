@@ -1,12 +1,13 @@
 // Surfaces favourites, recents, and quick actions when query is empty or scoped @recent.
 
 const { getTopRecents } = require('../frecency');
+const { listStartApps } = require('./apps');
 
 function basename(p) {
   return p.slice(Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')) + 1);
 }
 
-function search(ctx) {
+async function search(ctx) {
   const { q, config, idx } = ctx;
   const isEmpty = !q || q.length < 1;
   const isRecentScope = ['recent', 'recents', 'fav', 'favourites', 'favorites'].includes(ctx.scope);
@@ -34,12 +35,16 @@ function search(ctx) {
   }
 
   const recents = ['fav', 'favourites', 'favorites'].includes(ctx.scope) ? [] : getTopRecents(8);
+  const registered = recents.some((entry) => entry.path.startsWith('startapp:')) ? await listStartApps() : [];
   for (let i = 0; i < recents.length; i++) {
     const { path: p, score } = recents[i];
-    const title = basename(p);
+    const appId = p.startsWith('startapp:') ? p.slice('startapp:'.length) : null;
+    const installedApp = appId ? registered.find((entry) => entry.AppID === appId) : null;
+    if (appId && !installedApp) continue;
+    const title = installedApp ? installedApp.Name : basename(p);
     if (!isEmpty && !title.toLowerCase().includes(q.toLowerCase())) continue;
     if (favourites.some((f) => f.path === p)) continue;
-    let kind = 'file';
+    let kind = appId ? 'app' : 'file';
     for (let j = 0; j < idx.count; j++) {
       if (idx.paths[j] === p) {
         kind = idx.flags[j] === 2 ? 'app' : idx.flags[j] === 1 ? 'folder' : 'file';
@@ -50,11 +55,11 @@ function search(ctx) {
       type: kind,
       id: 'recent:' + p,
       title,
-      subtitle: 'Recent · ' + p,
+      subtitle: appId ? 'Recent · Windows application' : 'Recent · ' + p,
       score: 800 + score - i * 5,
       icon: null,
-      actions: ['open', 'reveal'],
-      data: { path: p, kind },
+      actions: appId ? ['launch-app'] : ['open', 'reveal'],
+      data: appId ? { appId } : { path: p, kind },
     });
   }
 

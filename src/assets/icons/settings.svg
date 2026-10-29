@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs><linearGradient id="gear-body" x1="10" y1="5" x2="39" y2="44" gradientUnits="userSpaceOnUse"><stop stop-color="#9DD8FF"/><stop offset="1" stop-color="#7775DE"/></linearGradient></defs>
+  <path d="m20 3-2 6-5 2-6-2-4 7 5 4v7l-5 4 4 7 6-2 5 2 2 7h8l2-7 5-2 6 2 4-7-5-4v-7l5-4-4-7-6 2-5-2-2-6h-8Z" fill="url(#gear-body)"/>
+  <circle cx="24" cy="24" r="12" fill="#4E5CB7" opacity=".45"/>
+  <circle cx="24" cy="24" r="8" fill="#E6F6FF"/>
+  <circle cx="24" cy="24" r="4" fill="#78BEE9"/>
+</svg>

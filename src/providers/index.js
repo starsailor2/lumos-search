@@ -9,6 +9,7 @@ module.exports = [
   require('./system'),
   require('./pathintel'),
   require('./batch'),
+  require('./apps'),
   require('./files'),
   require('./clipboard'),
   require('./windows'),

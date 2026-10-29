@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs><linearGradient id="file-paper" x1="11" y1="6" x2="38" y2="43" gradientUnits="userSpaceOnUse"><stop stop-color="#79C6FF"/><stop offset="1" stop-color="#4179ED"/></linearGradient></defs>
+  <ellipse cx="24" cy="44" rx="15" ry="2" fill="#000" opacity=".12"/>
+  <path d="M10 9a5 5 0 0 1 5-5h14l10 10v25a5 5 0 0 1-5 5H15a5 5 0 0 1-5-5V9Z" fill="url(#file-paper)"/>
+  <path d="M29 4v7a3 3 0 0 0 3 3h7L29 4Z" fill="#C9ECFF"/>
+  <path d="M17 22h15M17 28h15M17 34h9" stroke="#F0F9FF" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M14 10v26" stroke="#D3F1FF" stroke-width="1.4" stroke-linecap="round" opacity=".25"/>
+</svg>

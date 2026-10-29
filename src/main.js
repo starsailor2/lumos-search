@@ -20,6 +20,7 @@ const { runSystemCommand } = require('./providers/system');
 const { focusWindow, snapWindow } = require('./providers/windows');
 const { killProcess } = require('./providers/process');
 const { chatCompletion } = require('./providers/ai');
+const { launchApp } = require('./providers/apps');
 const { loadIntentMemory, recordIntent, getIntent, getRecentIntents, clearIntentMemory, flushIntentMemory } = require('./intent-memory');
 const PROVIDERS = require('./providers');
 
@@ -145,7 +146,7 @@ async function search(query) {
       };
     });
 
-  // Apply learned intent boost (+450 points, guaranteed #1 surface)
+  // Learned intent reorders results within their priority group.
   if (learnedIntent) {
     for (let j = 0; j < all.length; j++) {
       const r = all[j];
@@ -158,7 +159,8 @@ async function search(query) {
     }
   }
 
-  all.sort((a, b) => b.score - a.score);
+  const appsFirst = Boolean(q) && !scoped.scope && !/[\\/]/.test(q);
+  all.sort((a, b) => (appsFirst ? Number(b.type === 'app') - Number(a.type === 'app') : 0) || b.score - a.score);
 
   const results = [];
   const seen = new Set();
@@ -596,7 +598,7 @@ const KNOWN_ACTIONS = new Set([
   'open', 'reveal', 'copy', 'paste', 'open-external',
   'open-settings', 'rebuild-index', 'scope-clip', 'system-run',
   'window-focus', 'window-snap', 'kill-process', 'ai-ask', 'ai-chat',
-  'run-workflow', 'pin-favourite',
+  'run-workflow', 'pin-favourite', 'launch-app',
 ]);
 
 async function confirmAction(message, label) {
@@ -626,7 +628,13 @@ ipcMain.handle('run-action', async (_e, payload) => {
     if (lastSearchQuery && ['file', 'folder', 'app', 'game', 'quicklink'].includes(result.type)) recordIntent(lastSearchQuery, result);
   };
 
-  if (action === 'open' && typeof data.path === 'string') {
+  if (action === 'launch-app' && typeof data.appId === 'string') {
+    await launchApp(data.appId);
+    remember();
+    recordLaunch('startapp:' + data.appId);
+    recordOpen('startapp:' + data.appId);
+    hideWindow();
+  } else if (action === 'open' && typeof data.path === 'string') {
     const error = await shell.openPath(data.path);
     if (error) return { error };
     remember();

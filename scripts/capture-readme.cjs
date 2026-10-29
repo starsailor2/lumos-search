@@ -14,7 +14,7 @@ for (const [name, text] of Object.entries({
   'Project Brief.md': '# Project Brief\n\nBuild a faster way to find everyday files and commands.\n\nOwner: Design team\nStatus: Ready for review',
   'Project Roadmap.md': '# Project Roadmap\n\n1. Explore\n2. Design\n3. Build\n4. Test and ship',
   'Project Budget.csv': 'Item,Amount\nDesign,2400\nDevelopment,4800\nTesting,1200',
-  'Release Notes.md': '# Release Notes\n\nLumos Search 2.0.2\n\n- One pill-shaped search bar.\n- Results expand smoothly beneath your query.\n- Find files, preview text, and run commands.\n- Your file index stays on this PC.',
+  'Release Notes.md': '# Release Notes\n\nLumos Search ' + require('../package.json').version + '\n\n- One pill-shaped search bar.\n- Results expand smoothly beneath your query.\n- Color-coded files and Windows app launching.\n- Your file index stays on this PC.',
 })) fs.writeFileSync(path.join(documents, name), text);
 fs.writeFileSync(path.join(profile, 'config.json'), JSON.stringify({
   version: 2, indexedRoots: [documents], hotkeys: ['F24'], hotkeyFallbacks: [],

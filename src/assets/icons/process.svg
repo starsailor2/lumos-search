@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs><linearGradient id="monitor-body" x1="5" y1="5" x2="43" y2="34" gradientUnits="userSpaceOnUse"><stop stop-color="#7DBFFF"/><stop offset="1" stop-color="#6875D7"/></linearGradient></defs>
+  <rect x="3" y="5" width="42" height="30" rx="5" fill="url(#monitor-body)"/>
+  <rect x="7" y="9" width="34" height="22" rx="2" fill="#243D62"/>
+  <path d="M10 22h6l4-9 6 15 4-9h8" stroke="#7CE8B8" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M20 35h8l2 6H18l2-6Z" fill="#7A91CD"/>
+  <rect x="13" y="40" width="22" height="4" rx="2" fill="#B0CAED"/>
+</svg>

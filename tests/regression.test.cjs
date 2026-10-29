@@ -12,6 +12,20 @@ const { sanitize, DEFAULT_CONFIG } = require('../src/config');
 const { tryCalculator, tryUnitConvert, search: quickSearch } = require('../src/providers/quickactions');
 const { parseScope, loadProviders } = require('../src/scope');
 
+test('standalone SVG icons contain only local vector artwork and valid paint references', () => {
+  const directory = path.resolve(__dirname, '../src/assets/icons');
+  const names = fs.readdirSync(directory).filter((name) => name.endsWith('.svg'));
+  assert.equal(names.length, 20);
+  for (const name of names) {
+    const svg = fs.readFileSync(path.join(directory, name), 'utf8');
+    assert.match(svg, /viewBox="0 0 48 48"/);
+    assert(!/<script|<foreignObject|<image|\bon\w+=/i.test(svg), `Unexpected active content in ${name}`);
+    assert(!/(?:href|src)=/i.test(svg), `External resource in ${name}`);
+    const ids = new Set(Array.from(svg.matchAll(/\bid="([^"]+)"/g), (match) => match[1]));
+    for (const match of svg.matchAll(/url\(#([^)]+)\)/g)) assert(ids.has(match[1]), `Missing SVG paint ${match[1]} in ${name}`);
+  }
+});
+
 function fixture(paths, flags = paths.map(() => 0)) {
   return { paths, names: paths.map((p, i) => path.win32.basename(p).replace(flags[i] === 2 ? /\.(lnk|url)$/i : /$^/, '').toLowerCase()), flags, count: paths.length };
 }
@@ -52,6 +66,23 @@ test('scopes browse only the requested kinds and bound result materialization', 
   assert.deepEqual((await files.search(context(idx, '', 'folders'))).map((r) => r.type), ['folder']);
   assert.equal((await files.search(context(fixture(Array.from({ length: 2000 }, (_, i) => `C:\\Docs\\report${i}.txt`)), 'report', null, { maxResults: 5 }))).length, 5);
   for (const scope of ['@folders', '@web', '@workflows']) assert(loadProviders(parseScope(scope).providers).length);
+});
+
+test('indexed applications survive the result limit ahead of higher-scoring files and folders', async () => {
+  const paths = [...Array.from({ length: 60 }, (_, i) => `C:\\Docs\\Camera ${i}.txt`), 'C:\\Docs\\Camera', 'C:\\Apps\\Windows Camera.lnk'];
+  const idx = fixture(paths, [...Array(60).fill(0), 1, 2]);
+  const ctx = context(idx, 'camera', null, { maxResults: 5 });
+  ctx.frecencyBoost = (p) => p.endsWith('.txt') ? 5000 : 0;
+  ctx.learnedIntent = { path: paths[0] };
+  const results = await files.search(ctx);
+  assert.equal(results.length, 5);
+  assert.equal(results[0].type, 'app');
+  assert.equal(results[0].title, 'Windows Camera');
+  assert.equal(results[1].id, paths[0]);
+  const scoped = await files.search({ ...ctx, scope: 'files' });
+  assert(scoped.every((result) => result.type === 'file'));
+  const navigation = await files.search({ ...ctx, qLower: 'c:\\docs\\camera' });
+  assert(navigation.every((result) => result.type !== 'app'));
 });
 
 test('large scans yield to the event loop and superseded queries finish quickly', async () => {
@@ -95,8 +126,9 @@ test('configuration normalizes workflows and preserves refresh settings across p
   assert.equal(config.getConfig().maxResults, 40);
 });
 
-function mainHarness(directory, providers = [files]) {
+function mainHarness(directory, providers = [files], learnedIntent = null) {
   const workers = [];
+  const appLaunches = [];
   const handlers = new Map();
   class FakeWorker extends EventEmitter { constructor(_file, options) { super(); this.options = options; workers.push(this); } }
   const fakeApp = new EventEmitter();
@@ -108,12 +140,13 @@ function mainHarness(directory, providers = [files]) {
       screen: { getDisplayMatching: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }) } },
     worker_threads: { Worker: FakeWorker },
     './config': { getConfig: () => config },
-    './frecency': { frecencyBoost: () => 0 }, './providers/clipboard': {}, './icons': {}, './settings-window': {}, './paste': {},
+    './frecency': { frecencyBoost: () => 0, recordLaunch: () => {} }, './providers/clipboard': {}, './icons': {}, './settings-window': {}, './paste': {},
     './extensions': { getExtensionProviders: () => [] }, './providers/system': {}, './providers/windows': {}, './providers/process': {}, './providers/ai': {},
-    './intent-memory': { getIntent: () => null, getRecentIntents: () => [], recordIntent: () => {} },
-    './providers': providers, './providers/onboarding': {}, './analytics': {},
+    './intent-memory': { getIntent: () => learnedIntent, getRecentIntents: () => [], recordIntent: () => {} },
+    './providers/apps': { launchApp: async (appId) => appLaunches.push(appId) },
+    './providers': providers, './providers/onboarding': {}, './analytics': { recordOpen: () => {} },
   }, '\nconfig = ' + JSON.stringify(config) + '; module.exports.test = { startIndexing, spawnIndexer, flush: () => cacheSave, setWindow: (value) => { win = value; } };');
-  return { main, workers, handlers };
+  return { main, workers, handlers, appLaunches };
 }
 
 test('index batches stream, overlapping paths deduplicate, rebuild queues, and failures retain the live index', async () => {
@@ -179,6 +212,26 @@ test('malformed provider results cannot crash the renderer or inject unknown act
   assert.equal(response.results.length, 1);
   assert.deepEqual(Array.from(response.results[0].actions), ['copy']);
   assert.equal(response.results[0].matchRanges.length, 1);
+});
+
+test('normal search ranks apps first across providers before limiting and retains relevance within each group', async () => {
+  const { main } = mainHarness(os.tmpdir(), [
+    { search: () => Array.from({ length: 45 }, (_, i) => ({ id: 'file:' + i, title: 'Camera ' + i, type: i === 0 ? 'folder' : 'file', score: 5000 - i, actions: ['open'] })) },
+    { search: () => [
+      { id: 'camera-tools', title: 'Camera Tools', type: 'app', score: 800, actions: ['open'] },
+      { id: 'camera', title: 'Camera', type: 'app', score: 1180, actions: ['launch-app'] },
+      { id: 'web', title: 'Search Camera online', type: 'websearch', score: 7000, actions: ['open-external'] },
+    ] },
+  ], { id: 'file:1' });
+  const { results } = await main.search('camera');
+  assert.equal(results.length, 40);
+  assert.deepEqual(Array.from(results.slice(0, 2), (result) => result.id), ['camera', 'camera-tools']);
+  assert.equal(results[2].id, 'web');
+  assert.equal(results[3].id, 'file:1');
+  const navigation = await main.search('C:\\Docs\\Camera');
+  assert.equal(navigation.results[0].id, 'web', 'Path queries should keep relevance ordering');
+  const suggestions = await main.search('');
+  assert.equal(suggestions.results[0].id, 'web', 'Empty suggestions should keep their existing order');
 });
 
 test('real indexer skips dependencies, respects exclusions, and reports readable hot roots', async () => {
@@ -301,6 +354,49 @@ test('OS snapshots share a single asynchronous process and numeric process IDs a
   const proc = require('../src/providers/process');
   assert.equal(await proc.killProcess('1 & calc.exe'), false);
   assert.equal(await proc.killProcess(process.pid), false);
+});
+
+test('registered Windows apps search by name and launch only catalogued IDs', async () => {
+  const entries = [
+    { Name: 'Calculator', AppID: 'Microsoft.WindowsCalculator_8wekyb3d8bbwe!App' },
+    { Name: 'Visual Studio Code', AppID: 'Microsoft.VisualStudioCode' },
+    { Name: 'File Explorer', AppID: 'Microsoft.Windows.Explorer' },
+    { Name: null, AppID: 'bad' },
+  ];
+  const calls = [];
+  const apps = loadIsolated('src/providers/apps.js', {
+    '../powershell': { cachedSnapshot: () => async () => entries, runPowerShell: async (script) => calls.push(script) },
+  });
+  const results = await apps.search(context({}, 'calc', 'apps'));
+  assert.equal(results.length, 1); assert.equal(results[0].title, 'Calculator');
+  assert.equal(results[0].actions[0], 'launch-app');
+  assert.equal((await apps.search(context({}, '', 'apps'))).length, 3);
+  assert.equal((await apps.search(context({}, 'file manager')))[0].title, 'File Explorer');
+  await apps.launchApp(entries[0].AppID);
+  assert(calls[0].includes(".ShellExecute('shell:AppsFolder\\" + entries[0].AppID + "', '', '', 'open', 1)"));
+  await assert.rejects(apps.launchApp('unknown-app'), /no longer registered/);
+  await assert.rejects(apps.launchApp('bad\napp'), /Invalid/);
+  assert.equal(calls.length, 1);
+});
+
+test('recent registered apps preserve the app launch action and display name', async () => {
+  const appId = 'Microsoft.WindowsCalculator_8wekyb3d8bbwe!App';
+  const recent = loadIsolated('src/providers/recent.js', {
+    '../frecency': { getTopRecents: () => [{ path: 'startapp:' + appId, score: 20 }] },
+    './apps': { listStartApps: async () => [{ Name: 'Calculator', AppID: appId }] },
+  });
+  const results = await recent.search(context(fixture([]), '', 'recent'));
+  const app = results.find((entry) => entry.type === 'app');
+  assert.equal(app.title, 'Calculator'); assert.equal(app.actions[0], 'launch-app');
+  assert.equal(app.data.appId, appId); assert.equal(app.data.path, undefined);
+});
+
+test('registered-app result actions reach the Windows launcher', async () => {
+  const { handlers, appLaunches } = mainHarness(os.tmpdir());
+  const result = await handlers.get('run-action')({}, { action: 'launch-app', result: {
+    type: 'app', id: 'startapp:example', title: 'Example App', data: { appId: 'example' },
+  } });
+  assert.equal(result, undefined); assert.deepEqual(appLaunches, ['example']);
 });
 
 test('batch paths skip app entries and media actions use native keys', async () => {
