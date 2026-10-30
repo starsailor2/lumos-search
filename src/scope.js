@@ -17,8 +17,8 @@ const SCOPES = {
   calculator: ['quickactions'],
   convert: ['quickactions'],
   emoji: ['emoji'],
-  system: ['system'],
-  sys: ['system'],
+  system: ['system', 'commands'],
+  sys: ['system', 'commands'],
   quicklinks: ['quicklinks'],
   links: ['quicklinks'],
   ql: ['quicklinks'],
@@ -42,6 +42,7 @@ const SCOPES = {
 };
 
 const PROVIDER_MAP = {
+  commands: './providers/commands',
   quickactions: './providers/quickactions',
   files: './providers/files',
   apps: './providers/apps',

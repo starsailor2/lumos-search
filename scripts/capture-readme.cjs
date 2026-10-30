@@ -14,7 +14,8 @@ for (const [name, text] of Object.entries({
   'Project Brief.md': '# Project Brief\n\nBuild a faster way to find everyday files and commands.\n\nOwner: Design team\nStatus: Ready for review',
   'Project Roadmap.md': '# Project Roadmap\n\n1. Explore\n2. Design\n3. Build\n4. Test and ship',
   'Project Budget.csv': 'Item,Amount\nDesign,2400\nDevelopment,4800\nTesting,1200',
-  'Release Notes.md': '# Release Notes\n\nLumos Search ' + require('../package.json').version + '\n\n- One pill-shaped search bar.\n- Results expand smoothly beneath your query.\n- Color-coded files and Windows app launching.\n- Your file index stays on this PC.',
+  'Camera Guide.md': '# Camera Guide\n\nFind the Windows application before matching documents.',
+  'Release Notes.md': '# Release Notes\n\nLumos Search ' + require('../package.json').version + '\n\n- Official thin vector icons.\n- Live file updates and searchable index controls.\n- Windows applications appear first.\n- Your file index stays on this PC.',
 })) fs.writeFileSync(path.join(documents, name), text);
 fs.writeFileSync(path.join(profile, 'config.json'), JSON.stringify({
   version: 2, indexedRoots: [documents], hotkeys: ['F24'], hotkeyFallbacks: [],
@@ -40,6 +41,7 @@ app.whenReady().then(async () => {
     win.show(); win.focus();
     await win.webContents.executeJavaScript('document.querySelector("input").focus(); document.fonts.ready.then(() => true)');
     const capture = async (name) => {
+      await win.webContents.executeJavaScript('document.fonts.ready.then(() => true)');
       await pause(300);
       const image = await win.webContents.capturePage();
       assert(!image.isEmpty());
@@ -53,6 +55,8 @@ app.whenReady().then(async () => {
       assert.equal(await win.webContents.executeJavaScript('document.querySelector("input").value'), query);
       await until(() => win.webContents.executeJavaScript(`document.querySelector('#search-results').getAttribute('aria-busy') === 'false' && Array.from(document.querySelectorAll('.item-title')).some((item) => item.textContent === ${JSON.stringify(expectedTitle)})`), 'Search did not finish');
       await until(async () => Math.abs(win.getBounds().height - await win.webContents.executeJavaScript('60 + Math.ceil(document.querySelector(".results-content").getBoundingClientRect().height)')) <= 1, 'Launcher did not finish resizing');
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: 40, y: 85 });
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: 1, y: 1 });
     };
     await capture('01-compact.png');
     await search('project', 'Project Brief.md');
@@ -68,11 +72,23 @@ app.whenReady().then(async () => {
     await search('120 x 4 - 28', '452');
     assert.equal(await win.webContents.executeJavaScript('document.querySelector(".item-title")?.textContent'), '452');
     await capture('04-calculator.png');
+    await search('Camera', 'Camera');
+    await capture('06-windows-apps.png');
+    await search('@', '@apps');
+    await capture('08-search-modes.png');
+    await win.webContents.executeJavaScript('window.lumos.openSettings("indexing")');
+    await until(() => BrowserWindow.getAllWindows().length === 2, 'Index settings did not open');
+    const settings = BrowserWindow.getAllWindows().find((w) => w !== win);
+    await until(() => settings.webContents.executeJavaScript('Boolean(document.querySelector("#indexStatus")?.textContent.includes("Ready"))').catch(() => false), 'Index status did not load');
+    await settings.webContents.executeJavaScript('document.fonts.ready.then(() => true)');
+    await pause(300);
+    fs.writeFileSync(path.join(output, '07-index-settings.png'), (await settings.webContents.capturePage()).toPNG());
+    await main.stopServices();
     app.exit(0);
   } catch (error) {
     console.error(error);
     const win = BrowserWindow.getAllWindows()[0];
     if (win) console.error(await win.webContents.executeJavaScript('JSON.stringify({ query: document.querySelector("input")?.value, results: Array.from(document.querySelectorAll(".item-title")).map((item) => item.textContent) })').catch(() => 'Renderer unavailable'));
-    app.exit(1);
+    await main.stopServices(); app.exit(1);
   }
 });

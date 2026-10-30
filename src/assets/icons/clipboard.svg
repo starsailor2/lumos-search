@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
-  <defs><linearGradient id="clip-body" x1="8" y1="7" x2="40" y2="43" gradientUnits="userSpaceOnUse"><stop stop-color="#79DDE5"/><stop offset="1" stop-color="#449BCB"/></linearGradient></defs>
-  <rect x="7" y="7" width="34" height="37" rx="6" fill="url(#clip-body)"/>
-  <rect x="12" y="12" width="24" height="26" rx="3" fill="#EEFCFF"/>
-  <rect x="16" y="4" width="16" height="10" rx="4" fill="#9B82E6"/>
-  <rect x="20" y="6" width="8" height="3" rx="1.5" fill="#DCCFFF"/>
-  <path d="M17 21h14M17 26h8M17 31h6" stroke="#8CBAD1" stroke-width="2.3" stroke-linecap="round"/>
-  <circle cx="35" cy="35" r="9" fill="#6ADAAB"/><path d="m31 35 3 3 5-6" stroke="#F4FFF8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

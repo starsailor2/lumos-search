@@ -9,9 +9,8 @@ const fs = require('fs');
 const os = require('os');
 const { Worker } = require('worker_threads');
 const { loadConfig, getConfig, updateConfig } = require('./config');
-const { loadFrecency, recordLaunch, resetFrecency, frecencyBoost, flushFrecency } = require('./frecency');
+const { loadFrecency, recordLaunch: storeLaunch, getRankingSnapshot, resetFrecency, frecencyBoost, flushFrecency } = require('./frecency');
 const { startClipboardWatch, applyRetentionChange, clearHistory } = require('./providers/clipboard');
-const { getIcon } = require('./icons');
 const { createSettingsWindow } = require('./settings-window');
 const { restoreAndPaste } = require('./paste');
 const { parseScope, loadProviders } = require('./scope');
@@ -36,7 +35,12 @@ let tray = null;
 let indexerWorker = null;
 let config = null;
 let rebuildPending = false;
-let lastIndexUpdate = Date.now();
+let refreshPending = false;
+let lastIndexUpdate = 0;
+let scan = { mode: null, startedAt: 0, scanned: 0, unreadable: [], error: '' };
+let folderWatch = null;
+let fileSearch = null;
+let stopping = false;
 let lastSearchQuery = '';
 let modalOpen = false;
 
@@ -54,8 +58,9 @@ const idx = {
 
 const NOISE_PATH_REGEX = /[\\/](\.venv|venv|env|\.env|virtualenv|\.virtualenvs|\.conda|conda-env|site-packages|dist-packages|node_modules|bower_components|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.tox|\.nox|\.eggs|pip-wheel-metadata|\.git|\.next|\.nuxt|\.turbo|\.cargo|\.rustup|\.gradle|\.m2|\.nuget|obj|cmake-build-debug|cmake-build-release|\.vs|\.idea|ipch)[\\/]/i;
 
-function addEntries(items, target = idx) {
+function addEntries(items, target = idx, staging = false) {
   const idx = target;
+  const accepted = [];
   for (let i = 0; i < items.length; i++) {
     const [p, f] = items[i];
     const key = path.normalize(p).toLowerCase();
@@ -64,6 +69,7 @@ function addEntries(items, target = idx) {
       if (f === 2) {
         idx.flags[existing] = 2;
         idx.names[existing] = path.basename(p).replace(/\.(lnk|url|appref-ms)$/i, '').toLowerCase();
+        accepted.push([p, f]);
       }
       continue;
     }
@@ -77,9 +83,13 @@ function addEntries(items, target = idx) {
     const n = (f === 2 ? base.replace(/\.(lnk|url|appref-ms)$/i, '') : base).toLowerCase();
     idx.names.push(n);
     idx.flags.push(f);
+    accepted.push([p, f]);
   }
   idx.count = idx.paths.length;
+  fileSearch?.add(accepted, staging);
 }
+
+function recordLaunch(p) { storeLaunch(p); fileSearch?.setUsage(getRankingSnapshot()); }
 
 function resetIndex() {
   idx.paths = [];
@@ -91,7 +101,7 @@ function resetIndex() {
   idx.byPath.clear();
 }
 
-async function search(query) {
+async function search(query, onProgress) {
   const raw = String(query || '').trim();
   lastSearchQuery = raw;
   const scoped = parseScope(raw);
@@ -126,11 +136,29 @@ async function search(query) {
   const extProviders = scoped.scope ? [] : getExtensionProviders();
   providers = providers.concat(extProviders);
 
-  const responses = await Promise.all(providers.map(async (provider) => {
-    try { return await provider.search(ctx) || []; }
-    catch (e) { console.error('provider error:', e); return []; }
-  }));
-  let all = responses.flat().filter((r) => r && typeof r.id === 'string' && typeof r.title === 'string' &&
+  const responses = providers.map(() => []);
+  let remaining = providers.length;
+  let failedSources = 0;
+  let progressTimer = null;
+  const response = () => ({ ...rankResults(responses.flat(), ctx), pending: remaining > 0, failedSources });
+  try {
+    await Promise.all(providers.map(async (provider, i) => {
+      try { responses[i] = fileSearch && provider === require('./providers/files') ?
+        await fileSearch.search(ctx).catch(() => provider.search(ctx)) : await provider.search(ctx) || []; }
+      catch (e) { failedSources++; console.error('provider error:', e); }
+      remaining--;
+      if (onProgress && !progressTimer && remaining) progressTimer = setTimeout(() => {
+        progressTimer = null;
+        if (remaining) onProgress(response());
+      }, 0);
+    }));
+    return response();
+  } finally { clearTimeout(progressTimer); }
+}
+
+function rankResults(rawResults, ctx) {
+  const { learnedIntent } = ctx;
+  let all = rawResults.filter((r) => r && typeof r.id === 'string' && typeof r.title === 'string' &&
     typeof r.type === 'string' && Number.isFinite(r.score) && Array.isArray(r.actions) &&
     r.actions.some((action) => KNOWN_ACTIONS.has(action))).map((r) => {
       let end = 0;
@@ -159,7 +187,7 @@ async function search(query) {
     }
   }
 
-  const appsFirst = Boolean(q) && !scoped.scope && !/[\\/]/.test(q);
+  const appsFirst = Boolean(ctx.q) && !ctx.scope && !/[\\/]/.test(ctx.q);
   all.sort((a, b) => (appsFirst ? Number(b.type === 'app') - Number(a.type === 'app') : 0) || b.score - a.score);
 
   const results = [];
@@ -179,8 +207,7 @@ async function search(query) {
   }
   return {
     results,
-    status: idx.status,
-    indexed: idx.count,
+    ...getIndexStatus(),
     matches: all.length,
     lastIndexUpdate,
     recentIntents: getRecentIntents(6),
@@ -248,14 +275,25 @@ let lastFullCrawl = 0;
 let lastHotCrawl = 0;
 
 function startIndexing() {
-  if (indexerWorker) { rebuildPending = true; return; }
+  if (stopping) return;
+  void require('./providers/apps').listStartApps?.refresh?.();
+  if (indexerWorker) { rebuildPending = true; pushStatus(); return; }
   spawnIndexer({ mode: 'full' });
+}
+
+function refreshIndex() {
+  if (stopping) return;
+  void require('./providers/apps').listStartApps?.refresh?.();
+  if (indexerWorker) { refreshPending = true; pushStatus(); return; }
+  const roots = hotRoots();
+  if (roots.length) spawnIndexer({ mode: 'hot', roots });
 }
 
 function spawnIndexer(opts) {
   if (indexerWorker) return; // one crawl at a time; the scheduler retries later
   const mode = opts.mode === 'hot' ? 'hot' : 'full';
   idx.status = 'indexing';
+  scan = { mode, startedAt: Date.now(), scanned: 0, unreadable: [], error: '' };
   if (mode === 'full') {
     lastFullCrawl = Date.now();
     lastHotCrawl = Date.now(); // a full crawl covers the hot roots too
@@ -265,6 +303,7 @@ function spawnIndexer(opts) {
   indexerWorker = new Worker(path.join(__dirname, 'indexer.js'), {
     workerData: {
       roots: mode === 'hot' ? opts.roots : config.indexedRoots,
+      boundaryRoots: config.indexedRoots || [],
       excludedDirs: config.excludedDirs,
       skipDirs: config.skipDirs,
       drives,
@@ -273,6 +312,7 @@ function spawnIndexer(opts) {
   });
   const worker = indexerWorker;
   const streaming = mode === 'full' && idx.count === 0;
+  if (mode === 'full' && !streaming) fileSearch?.begin();
   const nextIndex = streaming ? idx : { paths: [], names: [], flags: [], parents: [], parentPaths: new Map(), count: 0, byPath: new Map(), filtered: true };
   let freshItems = [];
   let scanned = 0;
@@ -281,23 +321,40 @@ function spawnIndexer(opts) {
   const finish = () => {
     if (indexerWorker !== worker) return;
     indexerWorker = null;
-    if (!completed) { idx.status = 'error'; pushStatus(); }
-    if (rebuildPending) { rebuildPending = false; startIndexing(); }
+    if (stopping) return;
+    if (!completed) { idx.status = 'error'; scan.error ||= 'The scan stopped unexpectedly. Existing results are still available.'; pushStatus(); }
+    if (rebuildPending) { rebuildPending = false; refreshPending = false; startIndexing(); }
+    else if (refreshPending) { refreshPending = false; refreshIndex(); }
   };
   pushStatus();
 
   indexerWorker.on('message', (msg) => {
     if (msg.type === 'batch') {
       scanned += msg.items.length;
-      if (mode === 'full') addEntries(msg.items, nextIndex);
+      scan.scanned = scanned;
+      if (mode === 'full') addEntries(msg.items, nextIndex, !streaming);
       else for (const item of msg.items) freshItems.push(item);
-      if (mode === 'full') pushStatus(scanned);
+      pushStatus();
     } else if (msg.type === 'done') {
       if (failed) return;
       completed = true;
+      scan.unreadable = Array.isArray(msg.unreadable) ? [...new Set(msg.unreadable)] : [];
       lastIndexUpdate = Date.now();
       if (mode === 'full') {
-        if (!streaming) Object.assign(idx, nextIndex);
+        if (!streaming) {
+          if (scan.unreadable.length) {
+            const unavailable = scan.unreadable.map((p) => path.normalize(p).toLowerCase().replace(/[\\/]+$/, ''));
+            const retained = [];
+            for (let i = 0; i < idx.count; i++) {
+              const p = idx.paths[i].toLowerCase();
+              if (unavailable.some((root) => p === root || p.startsWith(root + path.sep))) retained.push([idx.paths[i], idx.flags[i]]);
+            }
+            addEntries(retained, nextIndex, true);
+          }
+          Object.assign(idx, nextIndex);
+          fileSearch?.commit();
+        }
+        folderWatch?.setRoots([...(msg.roots || []), ...(config.indexedRoots || []), ...scan.unreadable.filter((p) => /^[a-z]:[\\/]?$/i.test(p))]);
         idx.status = 'ready';
         pushStatus();
       } else {
@@ -311,12 +368,14 @@ function spawnIndexer(opts) {
       saveCache();
     } else if (msg.type === 'error') {
       failed = true;
+      scan.error = String(msg.error || 'The scan failed.');
       console.error('indexer:', msg.error);
     }
   });
   indexerWorker.on('error', (e) => {
     console.error(e);
     failed = true;
+    scan.error = e.message;
   });
   worker.once('exit', finish);
 }
@@ -346,6 +405,7 @@ function hotRoots() {
 // Drop every indexed entry whose path lies under one of `roots`.
 function removeIndexedRoots(roots, unreadable = []) {
   if (!roots || !roots.length) return;
+  fileSearch?.removeRoots(roots, unreadable);
   const norm = roots.map((r) => r.toLowerCase().replace(/[\\/]+$/, ''));
   const paths = [], names = [], flags = [], parents = [];
   for (let i = 0; i < idx.count; i++) {
@@ -416,15 +476,15 @@ function bootstrapExtensions() {
   } catch { /* non-fatal */ }
 }
 
-function pushStatus(scanned) {
-  if (win && !win.isDestroyed()) {
-    win.webContents.send('index-status', {
-      status: idx.status,
-      indexed: idx.count,
-      scanned: scanned || idx.count,
-      lastIndexUpdate,
-    });
-  }
+function getIndexStatus() {
+  return { status: idx.status, indexed: idx.count, ...scan, lastIndexUpdate,
+    unreadable: scan.unreadable.slice(0, 20), unreadableCount: scan.unreadable.length,
+    queued: rebuildPending ? 'full' : refreshPending ? 'hot' : null };
+}
+
+function pushStatus() {
+  const windows = BrowserWindow?.getAllWindows?.() || (win ? [win] : []);
+  for (const target of windows) if (!target.isDestroyed()) target.webContents.send('index-status', getIndexStatus());
 }
 
 function createWindow() {
@@ -561,6 +621,8 @@ function refreshTray(registeredHotkeys) {
       checked: config.clipboard.enabled,
       click: (item) => { config = updateConfig({ clipboard: { enabled: item.checked } }); refreshTray(); },
     },
+    { label: 'Refresh recent folders', click: refreshIndex },
+    { label: 'Index settings…', click: () => createSettingsWindow('indexing') },
     { label: 'Rebuild index', click: () => startIndexing() },
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() },
@@ -596,7 +658,7 @@ function registerHotkeys() {
 
 const KNOWN_ACTIONS = new Set([
   'open', 'reveal', 'copy', 'paste', 'open-external',
-  'open-settings', 'rebuild-index', 'scope-clip', 'system-run',
+  'open-settings', 'rebuild-index', 'refresh-index', 'scope-clip', 'set-scope', 'open-data-folder', 'system-run',
   'window-focus', 'window-snap', 'kill-process', 'ai-ask', 'ai-chat',
   'run-workflow', 'pin-favourite', 'launch-app',
 ]);
@@ -611,10 +673,13 @@ async function confirmAction(message, label) {
   } finally { modalOpen = false; }
 }
 
-ipcMain.handle('search', (_e, q) => {
+ipcMain.handle('search', (event, q, requestId) => {
   const query = String(q || '').slice(0, 500);
   if (query.trim()) recordSearch(query.trim());
-  return search(query);
+  const progress = Number.isSafeInteger(requestId) && requestId >= 0 ? (response) => {
+    if (!event.sender.isDestroyed()) event.sender.send('search-results', { requestId, response });
+  } : null;
+  return search(query, progress);
 });
 
 ipcMain.handle('run-action', async (_e, payload) => {
@@ -665,11 +730,18 @@ ipcMain.handle('run-action', async (_e, payload) => {
     restoreAndPaste(data.text, clipboard);
   } else if (action === 'open-settings') {
     completeOnboarding();
-    createSettingsWindow();
+    createSettingsWindow(data.section);
     hideWindow();
   } else if (action === 'rebuild-index') {
     startIndexing();
-    hideWindow();
+  } else if (action === 'refresh-index') {
+    refreshIndex();
+  } else if (action === 'open-data-folder') {
+    const error = await shell.openPath(app.getPath('userData'));
+    if (error) return { error };
+  } else if (action === 'set-scope') {
+    if (typeof data.scope !== 'string' || !Object.hasOwn(require('./scope').SCOPES, data.scope)) return { error: 'Unknown search mode.' };
+    win.webContents.send('set-query', '@' + data.scope + ' ');
   } else if (action === 'scope-clip') {
     if (win && !win.isDestroyed()) {
       win.webContents.send('set-query', '@clip ');
@@ -733,14 +805,9 @@ ipcMain.handle('run-action', async (_e, payload) => {
 });
 
 ipcMain.on('hide-window', () => hideWindow());
-ipcMain.on('open-settings', () => createSettingsWindow());
+ipcMain.on('open-settings', (_e, section) => createSettingsWindow(section));
 ipcMain.on('resize-launcher', (_e, payload) => {
   if (payload && typeof payload === 'object') resizeLauncher(payload.height, payload.animate === true);
-});
-
-ipcMain.handle('get-icon', (_e, payload) => {
-  if (!payload || typeof payload.path !== 'string') return null;
-  return getIcon(payload.path, payload.kind);
 });
 
 ipcMain.handle('preview-file', async (_e, p) => {
@@ -798,8 +865,12 @@ ipcMain.handle('pick-folder', async () => {
   if (res.canceled || !res.filePaths.length) return null;
   return res.filePaths[0];
 });
-ipcMain.on('reset-frecency', () => { resetFrecency(); clearIntentMemory(); clearAnalytics(); });
+ipcMain.on('reset-frecency', () => { resetFrecency(); fileSearch?.setUsage(getRankingSnapshot()); clearIntentMemory(); clearAnalytics(); });
 ipcMain.on('rebuild-index', () => startIndexing());
+ipcMain.on('refresh-index', refreshIndex);
+ipcMain.on('open-icon-credits', () => shell.openExternal('https://www.flaticon.com/uicons'));
+ipcMain.handle('open-data-folder', () => shell.openPath(app.getPath('userData')));
+ipcMain.handle('get-index-status', getIndexStatus);
 ipcMain.on('clear-clipboard', () => clearHistory(getConfig));
 ipcMain.handle('get-recent-intents', () => getRecentIntents(8));
 
@@ -814,7 +885,10 @@ if (!gotLock) {
 
   app.whenReady().then(async () => {
     config = loadConfig();
+    void require('./providers/apps').listStartApps();
     loadFrecency();
+    fileSearch = new (require('./file-search').FileSearch)();
+    fileSearch.setUsage(getRankingSnapshot());
     loadIntentMemory();
     loadAnalytics();
     loadExtensions();
@@ -824,6 +898,13 @@ if (!gotLock) {
     await loadCache();
     startIndexing();
     startRefreshSchedule(); // hot refresh every 5 min + idle full-crawl every hour
+    folderWatch = require('./folder-watch').watchFolders((roots) => {
+      if (indexerWorker) return false;
+      spawnIndexer({ mode: 'hot', roots });
+      return true;
+    }, () => config.skipDirs.length ? [...config.skipDirs, ...config.excludedDirs].map((s) => s.toLowerCase()) :
+      [...require('./indexer-policy').SKIP_DIRS, ...config.excludedDirs].map((s) => s.toLowerCase()));
+    powerMonitor.on('resume', () => folderWatch.reconcile());
     startClipboardWatch(getConfig);
 
     if (app.isPackaged) {
@@ -852,9 +933,14 @@ if (!gotLock) {
     flushFrecency();
     flushIntentMemory();
     flushAnalytics();
-    if (indexerWorker) indexerWorker.terminate();
-    stopExtensions();
+    void stopServices();
   });
+}
+
+async function stopServices() {
+  stopping = true; rebuildPending = false; refreshPending = false;
+  folderWatch?.close();
+  await Promise.allSettled([fileSearch?.close(), indexerWorker?.terminate(), stopExtensions()]);
 }
 
 module.exports = {
@@ -864,4 +950,5 @@ module.exports = {
   resetIndex,
   search,
   resizeLauncher,
+  stopServices,
 };

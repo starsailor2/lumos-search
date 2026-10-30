@@ -3,6 +3,7 @@
 module.exports = [
   require('./onboarding'),
   require('./recent'),
+  require('./commands'),
   require('./quickactions'),
   require('./quicklinks'),
   require('./emoji'),

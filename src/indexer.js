@@ -22,32 +22,7 @@ const PASS_DRIVES = (workerData && Array.isArray(workerData.drives) && workerDat
   : null;
 
 // Built-in skip list (all lowercase basenames)
-const BUILTIN_SKIP_DIRS = [
-  // Version control
-  '.git', '.svn', '.hg', '.bzr',
-  // Windows & OS system trees
-  '$recycle.bin', 'system volume information', '$windows.~bt', '$windows.~ws',
-  'windows.old', 'winsxs', 'servicing', 'softwaredistribution', 'msocache',
-  'recovery', 'perflogs', 'appdata', 'application data', 'onedrivetemp',
-  'windows', '$winreagent', 'config.msi', 'temp', 'tmp', 'crashdumps',
-  'd3dscache', 'inetcache', 'webcache',
-  // Python environments, packages & tooling
-  '.venv', 'venv', 'env', '.env', 'virtualenv', '.virtualenvs', '.conda',
-  'conda-env', 'site-packages', 'dist-packages', '__pycache__', '.pytest_cache',
-  '.mypy_cache', '.ruff_cache', '.tox', '.nox', '.hypothesis', '.eggs',
-  'pip-wheel-metadata',
-  // JavaScript / Node / Web dependencies & caches
-  'node_modules', 'bower_components', '.next', '.nuxt', '.turbo', '.npm',
-  '.pnpm', '.pnpm-store', '.yarn', '.yarn-cache', '.parcel-cache',
-  '.svelte-kit', '.output', '.docusaurus', '.cache',
-  // Rust / Cargo / Go / PHP / Ruby
-  'target', '.cargo', '.rustup', 'vendor', '.bundle',
-  // JVM / Gradle / Maven / Android
-  '.gradle', '.m2', '.ivy2', '.sbt', '.android',
-  // .NET / Visual Studio / IDEs / Build artifacts
-  'obj', 'bin', '.nuget', '.vs', '.idea', '.vscode', '.settings',
-  'cmake-build-debug', 'cmake-build-release', '.cxx', 'ipch',
-];
+const BUILTIN_SKIP_DIRS = require('./indexer-policy').SKIP_DIRS;
 
 const extraExcluded = (workerData && Array.isArray(workerData.excludedDirs) ? workerData.excludedDirs : [])
   .filter((d) => typeof d === 'string')
@@ -134,6 +109,14 @@ function shortcutDirs() {
 
 async function walk(root, { appsOnly = false, lnkAsApps = false } = {}) {
   try { if (!fs.statSync(root).isDirectory()) return false; } catch { unreadable.push(root); return false; }
+  if (workerData.mode === 'hot') {
+    const boundaries = new Set([...(Array.isArray(workerData.boundaryRoots) ? workerData.boundaryRoots : CUSTOM_ROOTS || []), ...shortcutDirs()]
+      .map((p) => path.resolve(p).toLowerCase()));
+    // A changed subfolder must not bypass an excluded or virtual-env ancestor.
+    for (let current = root; path.dirname(current) !== current && !boundaries.has(path.resolve(current).toLowerCase()); current = path.dirname(current)) {
+      if (isNoiseDir(path.basename(current), current)) return true;
+    }
+  }
   const stack = [root];
   let dirsVisited = 0;
   let rootRead = false;
@@ -210,12 +193,12 @@ const MODE = (workerData && workerData.mode === 'hot') ? 'hot' : 'full';
       flush();
     } else {
       // 1) Apps first — Start Menu and Desktop shortcuts behave like app launchers
-      for (const d of shortcutDirs()) await walk(d, { appsOnly: true });
+      for (const d of shortcutDirs()) { if (await walk(d, { appsOnly: true })) refreshedRoots.push(d); }
       flush();
 
       // 2) Every drive, or the user's custom root list if configured
       const driveList = CUSTOM_ROOTS || PASS_DRIVES || listDrives();
-      for (const drive of driveList) await walk(drive);
+      for (const drive of driveList) { if (await walk(drive)) refreshedRoots.push(drive); }
       flush();
     }
 

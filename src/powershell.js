@@ -10,20 +10,24 @@ function runPowerShell(script) {
 }
 
 // Searches share a short-lived snapshot and never start duplicate OS queries.
-function cachedSnapshot(script, ttl = 5000) {
+function cachedSnapshot(script, ttl = 5000, staleWhileRevalidate = false) {
   let value = [];
   let expires = 0;
   let pending = null;
-  return async () => {
+  let loaded = false;
+  const read = async (force = false) => {
     if (process.platform !== 'win32') return [];
-    if (Date.now() < expires) return value;
+    if (!force && Date.now() < expires) return value;
     if (!pending) pending = runPowerShell(script).then((out) => {
       const parsed = JSON.parse(out.trim() || '[]');
       value = (Array.isArray(parsed) ? parsed : [parsed]).filter(Boolean);
+      loaded = true;
       return value;
     }).catch(() => value).finally(() => { expires = Date.now() + ttl; pending = null; });
-    return pending;
+    return loaded && staleWhileRevalidate && !force ? value : pending;
   };
+  read.refresh = () => read(true);
+  return read;
 }
 
 module.exports = { runPowerShell, cachedSnapshot };

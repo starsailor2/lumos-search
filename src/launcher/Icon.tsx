@@ -1,34 +1,35 @@
-const icons: Record<string, string> = {
-  search: new URL('../assets/icons/search.svg', import.meta.url).href,
-  app: new URL('../assets/icons/app.svg', import.meta.url).href,
-  file: new URL('../assets/icons/file.svg', import.meta.url).href,
-  pdf: new URL('../assets/icons/pdf.svg', import.meta.url).href,
-  folder: new URL('../assets/icons/folder.svg', import.meta.url).href,
-  spreadsheet: new URL('../assets/icons/spreadsheet.svg', import.meta.url).href,
-  image: new URL('../assets/icons/image.svg', import.meta.url).href,
-  video: new URL('../assets/icons/video.svg', import.meta.url).href,
-  audio: new URL('../assets/icons/audio.svg', import.meta.url).href,
-  archive: new URL('../assets/icons/archive.svg', import.meta.url).href,
-  code: new URL('../assets/icons/code.svg', import.meta.url).href,
-  clipboard: new URL('../assets/icons/clipboard.svg', import.meta.url).href,
-  web: new URL('../assets/icons/web.svg', import.meta.url).href,
-  settings: new URL('../assets/icons/settings.svg', import.meta.url).href,
-  window: new URL('../assets/icons/window.svg', import.meta.url).href,
-  game: new URL('../assets/icons/game.svg', import.meta.url).href,
-  process: new URL('../assets/icons/process.svg', import.meta.url).href,
-  workflow: new URL('../assets/icons/workflow.svg', import.meta.url).href,
-  ai: new URL('../assets/icons/ai.svg', import.meta.url).href,
-  calculator: new URL('../assets/icons/calculator.svg', import.meta.url).href,
-};
+import manifest from '../assets/icons/uicons.json';
+import '../styles/uicons.css';
 
 const aliases: Record<string, string> = {
   all: 'search', apps: 'app', files: 'file', folders: 'folder', clip: 'clipboard', snippet: 'clipboard',
   system: 'settings', command: 'settings', windows: 'window', games: 'game', workflows: 'workflow',
-  websearch: 'web', quicklink: 'web', calc: 'calculator', convert: 'calculator', extension: 'app',
+  websearch: 'web', quicklink: 'link', calc: 'calculator', convert: 'calculator', extension: 'app',
+  snippets: 'clipboard', links: 'link', recent: 'history', fav: 'favourite',
+  'launch-app': 'open', 'open-external': 'web', 'open-settings': 'settings', 'rebuild-index': 'refresh', 'refresh-index': 'refresh',
+  'system-run': 'settings', 'window-focus': 'window', 'window-snap': 'window', 'kill-process': 'close', 'run-workflow': 'workflow',
+  'ai-ask': 'ai', 'ai-chat': 'ai', 'pin-favourite': 'favourite', 'scope-clip': 'clipboard',
+  'open-data-folder': 'folder', 'set-scope': 'search',
 };
 
 export function Icon({ name }: { name: string }) {
-  const kind = aliases[name] || name;
-  return <img className="illustrated-icon" data-icon={icons[kind] ? kind : 'file'}
-    src={icons[kind] || icons.file} alt="" draggable={false} aria-hidden="true" />;
+  const key = aliases[name] || name;
+  const brand = key.startsWith('brand-') && Object.prototype.hasOwnProperty.call(manifest.brands, key.slice(6));
+  const kind = brand || Object.prototype.hasOwnProperty.call(manifest.icons, key) ? key : 'file';
+  return <i className={`interface-icon uicon-${kind}${brand ? ' brand-icon' : ''}`} data-icon={kind} aria-hidden="true" />;
+}
+
+export function applicationIcon(identity: string) {
+  const text = identity.toLowerCase();
+  for (const brand of ['whatsapp', 'firefox', 'spotify', 'slack', 'discord', 'telegram', 'zoom', 'github', 'skype']) {
+    if (text.includes(brand)) return 'brand-' + brand;
+  }
+  if (text.includes('msedge') || text.includes('microsoftedge') || text.includes('microsoft edge')) return 'brand-microsoft-edge';
+  if (text.includes('camera')) return 'camera';
+  if (text.includes('calculator')) return 'calculator';
+  if (text.includes('explorer') || text.includes('file manager')) return 'folder';
+  if (text.includes('notepad')) return 'file';
+  if (text.includes('visualstudio') || text.includes('visual studio')) return 'code';
+  if (text.includes('chrome')) return 'web';
+  return 'app';
 }

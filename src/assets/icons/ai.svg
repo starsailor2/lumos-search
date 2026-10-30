@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
-  <defs><linearGradient id="ai-star" x1="8" y1="8" x2="37" y2="43" gradientUnits="userSpaceOnUse"><stop stop-color="#D6B9FF"/><stop offset="1" stop-color="#8F69E8"/></linearGradient></defs>
-  <path d="m23 5 5.5 13.5L42 24l-13.5 5.5L23 43l-5.5-13.5L4 24l13.5-5.5L23 5Z" fill="url(#ai-star)"/>
-  <path d="m23 14 3 7 7 3-7 3-3 7-3-7-7-3 7-3 3-7Z" fill="#EDE0FF" opacity=".65"/>
-  <path d="m39 3 2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z" fill="#FFD889"/>
-  <circle cx="8" cy="8" r="3" fill="#82E5D6"/>
-</svg>

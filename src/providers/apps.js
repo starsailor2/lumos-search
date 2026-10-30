@@ -2,7 +2,7 @@ const { cachedSnapshot, runPowerShell } = require('../powershell');
 const { nameScore } = require('./files');
 const { computeMatchRanges } = require('../search-index');
 
-const listStartApps = cachedSnapshot('[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding; Get-StartApps | Select-Object Name, AppID | ConvertTo-Json -Compress', 60000);
+const listStartApps = cachedSnapshot('[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding; Get-StartApps | Select-Object Name, AppID | ConvertTo-Json -Compress', 60000, true);
 
 async function search(ctx) {
   const apps = await listStartApps();

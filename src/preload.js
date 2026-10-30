@@ -7,13 +7,14 @@ function subscribe(channel, cb) {
 }
 
 contextBridge.exposeInMainWorld('lumos', {
-  search: (q) => ipcRenderer.invoke('search', q),
+  search: (q, requestId) => ipcRenderer.invoke('search', q, requestId),
+  onSearchResults: (cb) => subscribe('search-results', cb),
   runAction: (action, result) => ipcRenderer.invoke('run-action', { action, result }),
   hide: () => ipcRenderer.send('hide-window'),
-  getIcon: (p, kind) => ipcRenderer.invoke('get-icon', { path: p, kind }),
   previewFile: (p) => ipcRenderer.invoke('preview-file', p),
   getMeta: (p) => ipcRenderer.invoke('get-meta', p),
-  openSettings: () => ipcRenderer.send('open-settings'),
+  openSettings: (section) => ipcRenderer.send('open-settings', section),
+  getIndexStatus: () => ipcRenderer.invoke('get-index-status'),
   getAppearance: () => ipcRenderer.invoke('get-appearance'),
   getRecentIntents: () => ipcRenderer.invoke('get-recent-intents'),
   resizeLauncher: (height, animate) => ipcRenderer.send('resize-launcher', { height, animate }),

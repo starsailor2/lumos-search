@@ -63,39 +63,6 @@ async function search(ctx) {
     });
   }
 
-  if (isEmpty) {
-    results.push({
-      type: 'command',
-      id: 'cmd:settings',
-      title: 'Open Settings',
-      subtitle: 'Configure Lumos Search',
-      score: 400,
-      icon: '⚙️',
-      actions: ['open-settings'],
-      data: {},
-    });
-    results.push({
-      type: 'command',
-      id: 'cmd:rebuild',
-      title: 'Rebuild Index',
-      subtitle: 'Re-scan all drives for files and apps',
-      score: 390,
-      icon: '🔄',
-      actions: ['rebuild-index'],
-      data: {},
-    });
-    results.push({
-      type: 'command',
-      id: 'cmd:clipboard',
-      title: 'Browse Clipboard History',
-      subtitle: 'Type @clip to browse all entries',
-      score: 380,
-      icon: '📋',
-      actions: ['scope-clip'],
-      data: {},
-    });
-  }
-
   return results;
 }
 

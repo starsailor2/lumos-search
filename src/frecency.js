@@ -127,6 +127,7 @@ function getTopRecents(limit) {
 }
 
 module.exports = {
+  getRankingSnapshot: () => ({ entries, entriesByBase: Object.fromEntries(entriesByBase) }),
   loadFrecency,
   recordLaunch,
   resetFrecency,

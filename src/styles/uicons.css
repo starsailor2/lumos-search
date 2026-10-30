@@ -1,0 +1,61 @@
+/* Official Flaticon Uicons 4.0.0 · Thin Rounded. See src/assets/icons/Flaticon-LICENSE.txt. */
+@font-face { font-family: 'uicons-thin-rounded'; src: url('../assets/icons/uicons-thin-rounded.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: block; }
+@font-face { font-family: 'uicons-brands'; src: url('../assets/icons/uicons-brands.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: block; }
+.interface-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 1em; height: 1em; vertical-align: middle; }
+.interface-icon::before { display: block; font-family: 'uicons-thin-rounded' !important; font-size: inherit; font-style: normal; font-weight: 400 !important; font-variant: normal; line-height: 1; text-transform: none; -webkit-font-smoothing: antialiased; }
+.interface-icon.brand-icon::before { font-family: 'uicons-brands' !important; }
+.uicon-search::before { content: "\f13a"; }
+.uicon-folder::before { content: "\e8d6"; }
+.uicon-file::before { content: "\e6de"; }
+.uicon-pdf::before { content: "\e858"; }
+.uicon-spreadsheet::before { content: "\f364"; }
+.uicon-image::before { content: "\ef35"; }
+.uicon-video::before { content: "\f57d"; }
+.uicon-audio::before { content: "\ed9f"; }
+.uicon-archive::before { content: "\e86b"; }
+.uicon-code::before { content: "\e842"; }
+.uicon-app::before { content: "\e0c4"; }
+.uicon-clipboard::before { content: "\e4c2"; }
+.uicon-web::before { content: "\e974"; }
+.uicon-settings::before { content: "\f163"; }
+.uicon-window::before { content: "\e2fe"; }
+.uicon-game::before { content: "\e93b"; }
+.uicon-process::before { content: "\ed11"; }
+.uicon-workflow::before { content: "\e67a"; }
+.uicon-ai::before { content: "\f26d"; }
+.uicon-calculator::before { content: "\e357"; }
+.uicon-close::before { content: "\e5eb"; }
+.uicon-enter::before { content: "\e110"; }
+.uicon-preview::before { content: "\e7bb"; }
+.uicon-copy::before { content: "\e5ab"; }
+.uicon-paste::before { content: "\ee7f"; }
+.uicon-refresh::before { content: "\f05e"; }
+.uicon-open::before { content: "\e11d"; }
+.uicon-reveal::before { content: "\e8eb"; }
+.uicon-keyboard::before { content: "\eb7f"; }
+.uicon-info::before { content: "\eb10"; }
+.uicon-check::before { content: "\e430"; }
+.uicon-camera::before { content: "\e385"; }
+.uicon-history::before { content: "\f3fa"; }
+.uicon-favourite::before { content: "\f2e0"; }
+.uicon-link::before { content: "\ec21"; }
+.uicon-emoji::before { content: "\f214"; }
+.uicon-lock::before { content: "\ec4f"; }
+.uicon-sleep::before { content: "\ed67"; }
+.uicon-power::before { content: "\efb7"; }
+.uicon-volume::before { content: "\f59d"; }
+.uicon-volume-down::before { content: "\f59f"; }
+.uicon-muted::before { content: "\f5a0"; }
+.uicon-trash::before { content: "\f463"; }
+.uicon-brand-whatsapp::before { content: "\f5f5"; }
+.uicon-brand-firefox::before { content: "\e896"; }
+.uicon-brand-spotify::before { content: "\f285"; }
+.uicon-brand-slack::before { content: "\f1f3"; }
+.uicon-brand-discord::before { content: "\e6b9"; }
+.uicon-brand-telegram::before { content: "\f39c"; }
+.uicon-brand-zoom::before { content: "\f659"; }
+.uicon-brand-github::before { content: "\e965"; }
+.uicon-brand-windows::before { content: "\f618"; }
+.uicon-brand-microsoft::before { content: "\ed1b"; }
+.uicon-brand-microsoft-edge::before { content: "\ed1c"; }
+.uicon-brand-skype::before { content: "\f1ef"; }

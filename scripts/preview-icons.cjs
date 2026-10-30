@@ -2,39 +2,40 @@ const { app, BrowserWindow } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
+const { pathToFileURL } = require('node:url');
+const os = require('node:os');
 const root = path.resolve(__dirname, '..');
 const names = ['folder', 'file', 'pdf', 'spreadsheet', 'archive', 'image', 'video', 'audio', 'code', 'search', 'app', 'clipboard', 'web', 'settings', 'window', 'game', 'process', 'workflow', 'ai', 'calculator'];
-const labels = { file: 'Document', spreadsheet: 'Spreadsheet', image: 'Image', archive: 'Archive', app: 'Application', ai: 'AI', web: 'Web search' };
-const tiles = names.map((name, index) => {
-  const x = 40 + (index % 5) * 184;
-  const y = 98 + Math.floor(index / 5) * 136;
-  const artwork = fs.readFileSync(path.join(root, 'src/assets/icons', name + '.svg'), 'utf8')
-    .replace(/<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
+const labels = { file: 'Document', pdf: 'PDF', spreadsheet: 'Spreadsheet', image: 'Image', archive: 'Archive', app: 'Application', ai: 'AI', web: 'Web search' };
+const manifest = require('../src/assets/icons/uicons.json');
+const tiles = names.map((name) => {
   const label = labels[name] || name[0].toUpperCase() + name.slice(1);
-  return `<rect x="${x}" y="${y}" width="176" height="124" rx="16" fill="#20242C" stroke="#303642"/>
-    <svg x="${x + 52}" y="${y + 10}" width="72" height="72" viewBox="0 0 48 48">${artwork}</svg>
-    <text x="${x + 88}" y="${y + 105}" text-anchor="middle" fill="#D1D8E5" font-size="13">${label}</text>`;
+  assert(manifest.icons[name]);
+  return `<div class="tile"><i class="interface-icon uicon-${name}"></i><span>${label}</span><small>fi-tr-${manifest.icons[name].name}</small></div>`;
 }).join('\n');
-const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="680" viewBox="0 0 1000 680" font-family="Segoe UI, Arial, sans-serif">
-  <rect width="1000" height="680" rx="24" fill="#14171D"/>
-  <text x="40" y="46" fill="#F4F6FA" font-size="27" font-weight="700">Lumos icon collection</text>
-  <text x="40" y="72" fill="#98A6BB" font-size="13">Colorful SVG illustrations for files, media, and everyday actions</text>
-  ${tiles}
-  <text x="40" y="660" fill="#8491A5" font-size="11">20 standalone vector assets · Offline · Sharp at every size</text>
-</svg>`;
+const fontCss = pathToFileURL(path.join(root, 'src/styles/uicons.css')).href;
+const html = `<!doctype html><html><head><link rel="stylesheet" href="${fontCss}"><style>
+*{box-sizing:border-box}body{margin:0;background:#151515;color:#eee;padding:28px 40px;font-family:'Segoe UI',sans-serif}
+h1{margin:0 0 6px;font-size:26px;font-weight:600;letter-spacing:-.7px}p{margin:0;color:#999;font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:22px}.tile{height:100px;border:1px solid #333;border-radius:14px;background:#1d1d1d;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
+.tile .interface-icon{font-size:34px;color:#e4e4e4}.tile span{font-size:13px}.tile small{font-size:9px;color:#858585}footer{font-size:11px;color:#999;margin-top:20px}
+</style></head><body><h1>Lumos · Official interface icons</h1><p>Flaticon Uicons 4.0 · Thin Rounded · Vector glyphs bundled offline</p><div class="grid">${tiles}</div><footer>Uicons by Flaticon · flaticon.com/uicons</footer></body></html>`;
 fs.mkdirSync(path.join(root, 'docs/screenshots'), { recursive: true });
-const vector = path.join(root, 'docs/icon-preview.svg');
-fs.writeFileSync(vector, svg);
+fs.mkdirSync(path.join(root, 'test-output'), { recursive: true });
+const preview = path.join(root, 'test-output/icon-preview.html');
+fs.writeFileSync(preview, html);
 app.disableHardwareAcceleration();
+app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'lumos-icon-preview-')));
 app.whenReady().then(async () => {
   try {
-    const win = new BrowserWindow({ width: 1000, height: 680, show: false, frame: false, webPreferences: { offscreen: true, backgroundThrottling: false } });
-    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`<html><body style="margin:0;overflow:hidden">${svg}</body></html>`));
+    const win = new BrowserWindow({ width: 1000, height: 600, show: false, frame: false, webPreferences: { offscreen: true, backgroundThrottling: false } });
+    await win.loadFile(preview);
     await win.webContents.executeJavaScript('document.fonts.ready.then(() => true)');
+    assert(await win.webContents.executeJavaScript('document.fonts.check(\'34px "uicons-thin-rounded"\')'));
     const screenshot = await win.webContents.capturePage();
     assert(!screenshot.isEmpty());
-    fs.writeFileSync(path.join(root, 'docs/screenshots/05-svg-icons.png'), screenshot.toPNG());
-    console.log('PASS: rendered all 20 SVG illustrations into docs/icon-preview.svg and docs/screenshots/05-svg-icons.png');
+    fs.writeFileSync(path.join(root, 'docs/screenshots/05-interface-icons.png'), screenshot.toPNG());
+    console.log('PASS: rendered the official thin-rounded icons into docs/screenshots/05-interface-icons.png');
     app.exit(0);
   } catch (error) { console.error(error); app.exit(1); }
 });

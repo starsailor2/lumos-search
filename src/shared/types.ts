@@ -21,7 +21,22 @@ export interface LearnedIntent {
   count?: number;
 }
 
-export interface SearchResponse {
+export interface IndexStatus {
+  status: string;
+  indexed: number;
+  scanned: number;
+  startedAt: number;
+  mode: 'full' | 'hot' | null;
+  queued: 'full' | 'hot' | null;
+  unreadable: string[];
+  unreadableCount: number;
+  error: string;
+  lastIndexUpdate: number;
+}
+
+export interface SearchResponse extends Partial<IndexStatus> {
+  pending?: boolean;
+  failedSources?: number;
   results: SearchResult[];
   status: string;
   indexed: number;
@@ -38,17 +53,18 @@ export interface Appearance {
 }
 
 export interface LumosAPI {
-  search: (q: string) => Promise<SearchResponse>;
+  search: (q: string, requestId?: number) => Promise<SearchResponse>;
+  onSearchResults: (cb: (data: { requestId: number; response: SearchResponse }) => void) => () => void;
   runAction: (action: string, result: SearchResult) => Promise<{ error?: string } | undefined>;
   hide: () => void;
-  getIcon: (path: string, kind: string) => Promise<string | null>;
   previewFile: (path: string) => Promise<string | null>;
   getMeta: (path: string) => Promise<{ mtime: number; size: number } | null>;
-  openSettings: () => void;
+  openSettings: (section?: 'indexing') => void;
+  getIndexStatus: () => Promise<IndexStatus>;
   getAppearance: () => Promise<Appearance>;
   getRecentIntents: () => Promise<LearnedIntent[]>;
   resizeLauncher: (height: number, animate: boolean) => void;
-  onStatus: (cb: (s: { status: string; indexed: number; scanned?: number; lastIndexUpdate?: number }) => void) => () => void;
+  onStatus: (cb: (s: IndexStatus) => void) => () => void;
   onShown: (cb: (d?: { appearance?: Appearance }) => void) => () => void;
   onAppearance: (cb: (d: Appearance) => void) => () => void;
   onSetQuery: (cb: (q: string) => void) => () => void;
@@ -70,6 +86,9 @@ export const ACTION_LABELS: Record<string, string> = {
   'open-external': 'Open in browser',
   'open-settings': 'Open Settings',
   'rebuild-index': 'Rebuild Index',
+  'refresh-index': 'Refresh folders',
+  'set-scope': 'Use this mode',
+  'open-data-folder': 'Open data folder',
   'scope-clip': 'Browse Clipboard',
   'system-run': 'Run',
   'window-focus': 'Focus',
@@ -79,10 +98,4 @@ export const ACTION_LABELS: Record<string, string> = {
   'ai-chat': 'AI Chat',
   'run-workflow': 'Run Workflow',
   'pin-favourite': 'Pin',
-};
-
-export const ICONS: Record<string, string> = {
-  app: '▶', folder: '📁', file: '📄', calc: '🧮', convert: '🔁', websearch: '🌐',
-  clip: '📋', snippet: '✂️', emoji: '😀', quicklink: '🔗', system: '⚙️', command: '⚡',
-  window: '🪟', game: '🎮', process: '⚙️', workflow: '⚡', ai: '✨', extension: '🧩',
 };

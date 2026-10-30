@@ -5,6 +5,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
 <link rel="stylesheet" href="../styles/fonts.css">
 <link rel="stylesheet" href="../styles/tokens.css">
+<link rel="stylesheet" href="../styles/uicons.css">
 <title>Lumos Search — Settings</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -13,6 +14,8 @@
   h1 { font-family: 'Manrope', sans-serif; font-size: 25px; font-weight: 650; letter-spacing: -.8px; margin-bottom: 8px; }
   p.hint { color: rgba(255,255,255,0.45); font-size: 12px; margin-bottom: 20px; }
   section { margin-bottom: 26px; padding-bottom: 22px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  #indexing { scroll-margin-top: 20px; }
+  #indexing:focus { outline: none; }
   section:last-child { border-bottom: none; }
   h2 { font-family: 'Manrope', sans-serif; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; color: var(--text-secondary); margin-bottom: 18px; }
   label.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; font-size: 13.5px; }
@@ -79,8 +82,10 @@
   <label class="row"><span>Animations</span><input type="checkbox" id="animations"></label>
 </section>
 
-<section>
+<section id="indexing" tabindex="-1">
   <h2>Indexing</h2>
+  <p id="indexStatus" role="status" class="hint">Checking index…</p>
+  <p id="indexDetails" class="hint" style="margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere"></p>
   <label class="row"><span>Max results<span class="desc">Per search</span></span><input type="number" id="maxResults" min="5" max="200" style="width:70px"></label>
   <div class="list" id="rootsList"></div>
   <button id="addRoot">+ Add folder</button>
@@ -88,7 +93,8 @@
   <p class="hint" style="margin-top:10px">Excluded folder names</p>
   <div class="list" id="excludeList"></div>
   <div style="display:flex; gap:8px;"><input type="text" id="newExclude" placeholder="folder name"><button id="addExclude">Add</button></div>
-  <div style="margin-top:14px"><button id="rebuildIndex">Rebuild index now</button></div>
+  <div style="margin-top:14px;display:flex;gap:8px"><button id="refreshIndex">Refresh recent folders</button><button id="rebuildIndex">Rebuild index now</button></div>
+  <p class="hint" style="margin-top:8px">Refresh checks your selected folders, or your usual user folders when using all drives. Rebuild checks every included location. Existing results stay available.</p>
 </section>
 
 <section>
@@ -131,13 +137,41 @@
 <section>
   <h2>Usage data</h2>
   <button class="danger" id="clearFrecency">Clear usage history</button>
+  <button id="openDataFolder">Open data folder</button>
 </section>
 
+<p class="hint"><button id="iconCredits" style="font-size:11px">Uicons by Flaticon · Thin Rounded</button></p>
 <div id="toast"></div>
 
 <script>
   const $ = (id) => document.getElementById(id);
   let cfg = null;
+  let indexState = null;
+
+  function renderIndexStatus(status) {
+    if (status) indexState = status;
+    if (!indexState) return;
+    const s = indexState;
+    const scanning = s.status === 'indexing';
+    const elapsed = s.startedAt ? Math.max(0, Math.floor((Date.now() - s.startedAt) / 1000)) : 0;
+    $('indexStatus').textContent = scanning ? `${s.mode === 'hot' ? 'Refreshing folders' : 'Rebuilding index'} · ${s.scanned.toLocaleString()} found · ${elapsed}s elapsed${s.queued ? ' · next scan queued' : ''}` :
+      `${s.indexed.toLocaleString()} items indexed · ${s.status === 'error' ? 'Scan failed' : s.unreadable.length ? 'Some locations could not be read' : 'Ready'}`;
+    $('indexDetails').textContent = [s.lastIndexUpdate ? 'Last completed: ' + new Date(s.lastIndexUpdate).toLocaleString() : 'No completed scan yet.', s.error,
+      s.unreadable.length ? `Unavailable locations (${s.unreadableCount}):\n` + s.unreadable.slice(0, 10).join('\n') + (s.unreadableCount > 10 ? '\n…' : '') : ''].filter(Boolean).join('\n');
+    $('refreshIndex').disabled = scanning;
+    $('rebuildIndex').disabled = s.queued === 'full';
+    $('rebuildIndex').textContent = s.queued === 'full' ? 'Full rebuild queued' : scanning ? 'Queue full rebuild' : 'Rebuild index now';
+  }
+
+  function showSection(section) {
+    if (section !== 'indexing') return;
+    $('indexing').scrollIntoView({ block: 'start' });
+    $('indexing').focus({ preventScroll: true });
+  }
+  const offStatus = window.lumosSettings.onStatus(renderIndexStatus);
+  const offSection = window.lumosSettings.onSection(showSection);
+  const statusTimer = setInterval(() => { if (indexState?.status === 'indexing') renderIndexStatus(); }, 1000);
+  window.addEventListener('unload', () => { offStatus(); offSection(); clearInterval(statusTimer); });
 
   function toast(msg) {
     const t = $('toast');
@@ -350,6 +384,9 @@
   $('addSnippet').addEventListener('click', async () => { await save({ snippets: cfg.snippets.concat({ trigger: '', body: '' }) }); renderSnippets(); });
   $('addQuicklink').addEventListener('click', async () => { await save({ quicklinks: (cfg.quicklinks || []).concat({ keyword: '', title: '', url: '' }) }); renderQuicklinks(); });
   $('rebuildIndex').addEventListener('click', () => { window.lumosSettings.rebuildIndex(); toast('Rebuilding index…'); });
+  $('refreshIndex').addEventListener('click', () => window.lumosSettings.refreshIndex());
+  $('iconCredits').addEventListener('click', () => window.lumosSettings.openIconCredits());
+  $('openDataFolder').addEventListener('click', async () => { const error = await window.lumosSettings.openDataFolder(); if (error) toast(error); });
   $('clearFrecency').addEventListener('click', () => { window.lumosSettings.resetFrecency(); toast('Usage history cleared'); });
   $('clearClipboard').addEventListener('click', () => { window.lumosSettings.clearClipboard(); toast('Clipboard cleared'); });
 
@@ -383,6 +420,8 @@
   (async () => {
     cfg = await window.lumosSettings.getConfig();
     renderAll();
+    if (!indexState) renderIndexStatus(await window.lumosSettings.getIndexStatus());
+    showSection(location.hash.slice(1));
   })();
 </script>
 </body>

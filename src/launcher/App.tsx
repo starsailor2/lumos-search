@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLumos } from '../shared/hooks/useLumos';
 import { ACTION_LABELS } from '../shared/types';
-import type { SearchResult } from '../shared/types';
-import { Icon } from './Icon';
+import type { SearchResult, SearchResponse } from '../shared/types';
+import { Icon, applicationIcon } from './Icon';
 import '../styles/tokens.css';
 import '../styles/fonts.css';
 import './app.css';
 
-function ResultIcon({ item, url }: { item: SearchResult; url?: string }) {
+function ResultIcon({ item }: { item: SearchResult }) {
   const file = item.type === 'file';
   const extension = file ? /\.([^.\\/]+)$/.exec(String(item.data?.path || item.title))?.[1].toLowerCase() || '' : '';
   const fileStyles = [
@@ -20,10 +20,18 @@ function ResultIcon({ item, url }: { item: SearchResult; url?: string }) {
     { extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm'], tone: 'red', icon: 'video' },
   ];
   const style = fileStyles.find((entry) => entry.extensions.includes(extension));
+  let icon = file ? style?.icon || 'file' : item.type;
+  if (item.type === 'app') icon = applicationIcon(String(item.data?.appId || item.title));
+  if (item.type === 'command') icon = String(item.data?.scope || item.actions[0] || 'settings');
+  if (item.type === 'system') {
+    const systemIcons: Record<string, string> = { lock: 'lock', sleep: 'sleep', shutdown: 'power', restart: 'refresh', display: 'window',
+      'volume-up': 'volume', 'volume-down': 'volume-down', 'volume-mute': 'muted', 'empty-trash': 'trash' };
+    icon = systemIcons[String(item.data?.commandId)] || 'settings';
+  }
   const tones: Record<string, string> = { folder: 'yellow', app: 'native', calc: 'green', convert: 'green', clip: 'blue', snippet: 'blue', emoji: 'yellow', websearch: 'blue', quicklink: 'blue', system: 'red', command: 'blue', window: 'blue', process: 'red', workflow: 'yellow', ai: 'violet', game: 'violet', extension: 'green' };
   return <div className="item-icon-box" data-tone={file ? style?.tone || 'blue' : tones[item.type] || 'blue'} aria-hidden="true">
     {item.type === 'emoji' ? <span className="emoji-preview">{String(item.data?.text || '')}</span> :
-      url && !file && item.type !== 'folder' ? <img src={url} alt="" className="item-icon-img" /> : <Icon name={file ? style?.icon || 'file' : item.type} />}
+      <Icon name={icon} />}
     {file && extension && <span className="file-extension">{extension.slice(0, 4).toUpperCase()}</span>}
   </div>;
 }
@@ -47,19 +55,22 @@ export default function App() {
   const list = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const requestId = useRef(0);
-  const icons = useRef(new Map<string, string>());
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<SearchResult[]>([]);
   const [itemsQuery, setItemsQuery] = useState('');
   const [selected, setSelected] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [failedSources, setFailedSources] = useState(0);
+  const selectedResult = useRef<SearchResult | undefined>(undefined);
+  const selectionTouched = useRef(false);
+  const previousQuery = useRef<string | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
   const [answer, setAnswer] = useState('');
   const [preview, setPreview] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
-  const [iconCache, setIconCache] = useState<Record<string, string>>({});
   const [refresh, setRefresh] = useState(0);
   const wasIndexing = useRef(false);
   const lastIndexRefresh = useRef(0);
@@ -117,40 +128,41 @@ export default function App() {
 
   useEffect(() => {
     const id = ++requestId.current;
-    setBusy(true); setError(''); setSelected(0); setAnswer('');
+    setBusy(true); setSearching(true); setError(''); setAnswer('');
+    if (previousQuery.current !== query) {
+      previousQuery.current = query;
+      setSelected(0); selectedResult.current = undefined; selectionTouched.current = false;
+    }
+    const applyResults = (response: SearchResponse) => {
+      if (id !== requestId.current) return;
+      const results = response.results || [];
+      const previous = selectionTouched.current ? selectedResult.current : undefined;
+      const at = previous ? results.findIndex((r) => r.id === previous.id ||
+        (r.type === 'app' && previous.type === 'app' && r.title.toLowerCase() === previous.title.toLowerCase())) : -1;
+      setSelected(at < 0 ? 0 : at);
+      selectedResult.current = results[at < 0 ? 0 : at];
+      setItems(results); setItemsQuery(query);
+      setBusy(Boolean(response.pending) && !results.length);
+      setSearching(Boolean(response.pending));
+      setFailedSources(response.failedSources || 0);
+    };
+    const offProgress = window.lumos.onSearchResults((data) => { if (data.requestId === id) applyResults(data.response); });
     const timer = setTimeout(async () => {
       try {
-        const response = await search(query);
+        const response = await search(query, id);
         if (id !== requestId.current) return;
-        setItems(response.results || []);
-        setItemsQuery(query);
-        setBusy(false);
-        const updates: Record<string, string> = {};
-        let nextIcon = 0;
-        const results = response.results || [];
-        await Promise.all(Array.from({ length: Math.min(6, results.length) }, async () => {
-          while (id === requestId.current && nextIcon < results.length) {
-            const item = results[nextIcon++];
-            if (!['app', 'game'].includes(item.type)) continue;
-            const path = typeof item.data?.path === 'string' ? item.data.path : '';
-            if (!path) continue;
-            const url = icons.current.get(path) || await window.lumos.getIcon(path, item.type).catch(() => null);
-            if (url) {
-              if (icons.current.size >= 400) icons.current.delete(icons.current.keys().next().value!);
-              icons.current.set(path, url); updates[path] = url;
-            }
-          }
-        }));
-        if (id === requestId.current) setIconCache(updates);
+        applyResults(response);
       } catch (err) {
         if (id === requestId.current) { setItems([]); setError(err instanceof Error ? err.message : 'Search failed. Try again.'); }
-      } finally { if (id === requestId.current) setBusy(false); }
+      } finally { if (id === requestId.current) { setBusy(false); setSearching(false); } }
     }, 45);
-    return () => { clearTimeout(timer); ++requestId.current; };
+    return () => { offProgress(); clearTimeout(timer); ++requestId.current; };
   }, [query, refresh, search]);
 
   const visibleItems = query.trim() && !itemsQuery.trim() ? [] : items;
   const item = visibleItems[selected];
+  selectedResult.current = item;
+  const canPreview = item?.type === 'file' && /\.(txt|md|json|log|csv|js|ts|py|yml|yaml|xml|ini|cfg|conf)$/i.test(String(item.data?.path || ''));
   useEffect(() => {
     if (!expanded || !list.current) return;
     const row = list.current.querySelector('[aria-selected="true"]');
@@ -173,14 +185,14 @@ export default function App() {
   }, [item, showPreview]);
 
   const run = useCallback(async (result: SearchResult | undefined, action?: string) => {
-    if (!result || busy || running) return;
+    if (!result || busy || running || itemsQuery !== query) return;
     setRunning(true); setError('');
     try {
       const response = await window.lumos.runAction(action || result.actions?.[0] || 'open', result);
       if (response?.error) setError(response.error);
     } catch (err) { setError(err instanceof Error ? err.message : 'Action failed. Try again.'); }
     finally { setRunning(false); }
-  }, [busy, running]);
+  }, [busy, running, itemsQuery, query]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -195,6 +207,7 @@ export default function App() {
         e.preventDefault(); expand(!expanded);
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
+        selectionTouched.current = true;
         if (!expanded) expand(true);
         else if (visibleItems.length) setSelected((s) => (s + (e.key === 'ArrowDown' ? 1 : -1) + visibleItems.length) % visibleItems.length);
       } else if (e.key === 'Enter' && !(e.target instanceof HTMLButtonElement)) {
@@ -220,38 +233,45 @@ export default function App() {
             autoFocus autoComplete="off" spellCheck={false} />
           {expanded || query ? <button className="clear-search" aria-label={query ? 'Clear search' : 'Collapse search'}
             title={query ? 'Clear search' : 'Collapse search'}
-            onClick={() => { setQuery(''); expand(false); setShowPreview(false); input.current?.focus(); }}>×</button> :
+            onClick={() => { setQuery(''); expand(false); setShowPreview(false); input.current?.focus(); }}><Icon name="close" /></button> :
             <button className="search-shortcut" onClick={() => { expand(true); input.current?.focus(); }} aria-label="Expand search (Control K)">Ctrl K</button>}
         </header>
         <div className="results-reveal" aria-hidden={!expanded}>
           <div className="results-content" ref={panel}>
             {error && <div className="message error-message" role="alert">{error}</div>}
+            {failedSources > 0 && !searching && <div className="message" role="status">Some search sources are unavailable. Search again to retry.</div>}
             {answer ? <div className="ai-answer" tabIndex={0}><div className="answer-label">AI answer · copied to clipboard</div>{answer}</div> :
-            <div className="results-pane" id="search-results" role="listbox" aria-label="Search results" aria-busy={busy} ref={list}>
+            <div className="results-pane" id="search-results" role="listbox" aria-label="Search results" aria-busy={searching} ref={list}>
               {!visibleItems.length ? <div className="empty-results">
                 <p className="empty-results-title">{busy ? 'Searching…' : indexStatus.status === 'indexing' ? 'Building your index…' : query ? 'No matches found' : 'Ready when you are'}</p>
                 <p className="empty-results-hint">{query ? 'Try a shorter name or a different search.' : 'Find a file, open an app, or calculate 12 × 4.'}</p>
+                {query && !busy && <button className="action-btn" onClick={() => window.lumos.openSettings('indexing')}>Check indexed folders</button>}
               </div> : visibleItems.map((result, i) => {
-                const iconPath = typeof result.data?.path === 'string' ? result.data.path : '';
                 return <div key={result.id} id={`result-${i}`} role="option" aria-selected={selected === i}
-                  className={`result-card${selected === i ? ' selected' : ''}`} onClick={() => { setSelected(i); void run(result); }}
-                  onMouseMove={() => setSelected(i)} title={result.subtitle}>
-                  <ResultIcon item={result} url={iconCache[iconPath]} />
+                  className={`result-card${selected === i ? ' selected' : ''}`} onClick={() => { selectionTouched.current = true; setSelected(i); void run(result); }}
+                  onMouseMove={() => { selectionTouched.current = true; setSelected(i); }} title={result.subtitle}>
+                  <ResultIcon item={result} />
                   <div className="item-text"><div className="item-title">{highlight(result.title, result.matchRanges)}</div>
                     <div className="item-subtitle">{result.subtitle}</div></div>
-                  {selected === i && <span className="item-enter" aria-hidden="true">↵</span>}
+                  {selected === i && <span className="item-enter" aria-hidden="true"><Icon name="enter" /></span>}
                 </div>;
               })}
             </div>}
-            {showPreview && !answer && <div className="file-preview">{preview || 'No text preview available for this item.'}</div>}
+            {showPreview && canPreview && !answer && <div className="file-preview">{preview || 'No text preview available for this item.'}</div>}
             {item && !answer && <div className="action-dock" aria-label="Selected result actions">
-              {item.actions.map((action) => <button key={action} className="action-btn" disabled={busy || running} onClick={() => void run(item, action)}>{ACTION_LABELS[action] || action}</button>)}
-              {item.data?.path != null && <button className="action-btn" aria-pressed={showPreview} onClick={() => setShowPreview(!showPreview)}>Preview</button>}
+              {item.actions.map((action) => <button key={action} className="action-btn" disabled={busy || running} onClick={() => void run(item, action)}><Icon name={action} />{ACTION_LABELS[action] || action}</button>)}
+              {canPreview && <button className="action-btn" aria-pressed={showPreview} onClick={() => setShowPreview(!showPreview)}><Icon name="preview" />Preview</button>}
             </div>}
             <footer className="status-bar">
-              <button onClick={() => window.lumos.openSettings()} title="Open settings">Settings</button>
-              <span role="status">{running ? 'Working…' : busy ? 'Searching…' : `${visibleItems.length} results`} · {indexStatus.indexed.toLocaleString()} indexed{indexStatus.status === 'indexing' ? ' · indexing…' : indexStatus.status === 'error' ? ' · scan failed; retry in Settings' : ''}</span>
-              <span className="keyboard-hint">↑↓ select · Esc close</span>
+              <button onClick={() => window.lumos.openSettings()} title="Open settings"><Icon name="settings" /> Settings</button>
+              <span>{running ? 'Working…' : searching ? 'Searching…' : `${visibleItems.length} ${visibleItems.length === 1 ? 'result' : 'results'}`}</span>
+              <button className="index-status" onClick={() => window.lumos.openSettings('indexing')}
+                title={indexStatus.error || (indexStatus.lastIndexUpdate ? `Last checked ${new Date(indexStatus.lastIndexUpdate).toLocaleString()}. Open index settings.` : 'Open index settings')}>
+                <span role="status">{indexStatus.status === 'indexing' ? `${indexStatus.mode === 'hot' ? 'Refreshing' : 'Scanning'} · ${indexStatus.scanned.toLocaleString()} found` :
+                  indexStatus.status === 'error' || indexStatus.unreadable.length ? 'Index needs attention' : `${indexStatus.indexed.toLocaleString()} indexed`}
+                  {indexStatus.queued ? ' · scan queued' : ''}</span>
+              </button>
+              <span className="keyboard-hint"><Icon name="keyboard" /> Arrow keys · Esc close</span>
             </footer>
           </div>
         </div>

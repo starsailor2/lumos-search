@@ -12,18 +12,26 @@ const { sanitize, DEFAULT_CONFIG } = require('../src/config');
 const { tryCalculator, tryUnitConvert, search: quickSearch } = require('../src/providers/quickactions');
 const { parseScope, loadProviders } = require('../src/scope');
 
-test('standalone SVG icons contain only local vector artwork and valid paint references', () => {
+test('official thin icons use a pinned local vector font, valid mappings and the publisher license', () => {
   const directory = path.resolve(__dirname, '../src/assets/icons');
-  const names = fs.readdirSync(directory).filter((name) => name.endsWith('.svg'));
-  assert.equal(names.length, 20);
-  for (const name of names) {
-    const svg = fs.readFileSync(path.join(directory, name), 'utf8');
-    assert.match(svg, /viewBox="0 0 48 48"/);
-    assert(!/<script|<foreignObject|<image|\bon\w+=/i.test(svg), `Unexpected active content in ${name}`);
-    assert(!/(?:href|src)=/i.test(svg), `External resource in ${name}`);
-    const ids = new Set(Array.from(svg.matchAll(/\bid="([^"]+)"/g), (match) => match[1]));
-    for (const match of svg.matchAll(/url\(#([^)]+)\)/g)) assert(ids.has(match[1]), `Missing SVG paint ${match[1]} in ${name}`);
+  const manifest = require('../src/assets/icons/uicons.json');
+  const css = fs.readFileSync(path.resolve(directory, '../../styles/uicons.css'), 'utf8');
+  const font = fs.readFileSync(path.join(directory, 'uicons-thin-rounded.woff2'));
+  assert.equal(manifest.style, 'thin-rounded');
+  assert.equal(manifest.version, '4.0.0');
+  assert.equal(font.subarray(0, 4).toString(), 'wOF2');
+  assert.equal(require('node:crypto').createHash('sha256').update(font).digest('hex'), manifest.fontSha256);
+  assert(Object.keys(manifest.icons).length >= 32);
+  assert.equal(Object.keys(manifest.brands).length, 12);
+  assert.equal(require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(directory, 'uicons-brands.woff2'))).digest('hex'), manifest.brandFontSha256);
+  assert.equal(fs.readdirSync(directory).filter((name) => name.endsWith('.svg')).length, 0);
+  assert.match(fs.readFileSync(path.join(directory, 'Flaticon-LICENSE.txt'), 'utf8'), /Flaticon License/);
+  assert(!/https?:/.test(css), 'The renderer must load icons offline');
+  for (const [kind, icon] of Object.entries(manifest.icons)) {
+    assert(css.includes(`.uicon-${kind}::before { content: "\\${icon.codepoint}"; }`), `Missing official glyph for ${kind}`);
+    assert.match(icon.name, /^[a-z-]+$/);
   }
+  for (const [kind, icon] of Object.entries(manifest.brands)) assert(css.includes(`.uicon-brand-${kind}::before { content: "\\${icon.codepoint}"; }`));
 });
 
 function fixture(paths, flags = paths.map(() => 0)) {
@@ -126,6 +134,17 @@ test('configuration normalizes workflows and preserves refresh settings across p
   assert.equal(config.getConfig().maxResults, 40);
 });
 
+test('index controls are discoverable by name without leaking into file scopes', () => {
+  const commands = require('../src/providers/commands');
+  for (const query of ['reindex', 'rebuild index', 'full scan']) assert.equal(commands.search(context({}, query))[0].actions[0], 'rebuild-index');
+  for (const query of ['refresh', 'refresh index', 'scan changes']) assert.equal(commands.search(context({}, query))[0].actions[0], 'refresh-index');
+  assert.equal(commands.search(context({}, 'index settings'))[0].data.section, 'indexing');
+  assert.equal(commands.search(context({}, 'reindex', 'files')).length, 0);
+  assert.equal(commands.search(context({}, '@fi'))[0].data.scope, 'files');
+  assert(commands.search(context({}, '@')).length > 10);
+  assert.equal(commands.search(context({}, 'data folder'))[0].actions[0], 'open-data-folder');
+});
+
 function mainHarness(directory, providers = [files], learnedIntent = null) {
   const workers = [];
   const appLaunches = [];
@@ -140,7 +159,7 @@ function mainHarness(directory, providers = [files], learnedIntent = null) {
       screen: { getDisplayMatching: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }) } },
     worker_threads: { Worker: FakeWorker },
     './config': { getConfig: () => config },
-    './frecency': { frecencyBoost: () => 0, recordLaunch: () => {} }, './providers/clipboard': {}, './icons': {}, './settings-window': {}, './paste': {},
+    './frecency': { frecencyBoost: () => 0, recordLaunch: () => {} }, './providers/clipboard': {}, './settings-window': {}, './paste': {},
     './extensions': { getExtensionProviders: () => [] }, './providers/system': {}, './providers/windows': {}, './providers/process': {}, './providers/ai': {},
     './intent-memory': { getIntent: () => learnedIntent, getRecentIntents: () => [], recordIntent: () => {} },
     './providers/apps': { launchApp: async (appId) => appLaunches.push(appId) },
@@ -148,6 +167,32 @@ function mainHarness(directory, providers = [files], learnedIntent = null) {
   }, '\nconfig = ' + JSON.stringify(config) + '; module.exports.test = { startIndexing, spawnIndexer, flush: () => cacheSave, setWindow: (value) => { win = value; } };');
   return { main, workers, handlers, appLaunches };
 }
+
+test('scan status reports real progress, queued work and unavailable locations for both windows', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumos-status-test-'));
+  try {
+    const { main, workers, handlers } = mainHarness(directory);
+    const status = handlers.get('get-index-status');
+    assert.equal(status().lastIndexUpdate, 0);
+    handlers.get('refresh-index')();
+    assert.equal(workers[0].options.workerData.mode, 'hot');
+    assert.equal(status().scanned, 0);
+    assert(status().startedAt > 0);
+    workers[0].emit('message', { type: 'batch', items: [['C:\\Docs\\one.txt', 0]] });
+    assert.equal(status().scanned, 1);
+    handlers.get('rebuild-index')();
+    assert.equal(status().queued, 'full');
+    workers[0].emit('message', { type: 'done', roots: ['C:\\Docs'], unreadable: ['C:\\Docs\\Private'] });
+    assert.equal(status().unreadable[0], 'C:\\Docs\\Private');
+    workers[0].emit('exit', 0);
+    assert.equal(workers[1].options.workerData.mode, 'full');
+    assert.equal(status().queued, null);
+    workers[1].emit('message', { type: 'done', unreadable: [] }); workers[1].emit('exit', 0);
+    assert.equal(status().status, 'ready');
+    assert(status().lastIndexUpdate > 0);
+    await main.test.flush();
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
 
 test('index batches stream, overlapping paths deduplicate, rebuild queues, and failures retain the live index', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumos-index-test-'));
@@ -183,6 +228,43 @@ test('hot refresh only removes entries for successfully refreshed roots', async 
     assert.deepEqual(Array.from(main.idx.paths), ['D:\\Offline\\keep.txt', 'C:\\Docs\\new.txt']);
     await main.test.flush();
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('a full rebuild retains entries under temporarily unavailable locations', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumos-offline-test-'));
+  try {
+    const { main, workers } = mainHarness(directory);
+    main.addEntries([['C:\\Docs\\old.txt', 0], ['D:\\Offline\\keep.txt', 0]]);
+    main.test.startIndexing();
+    workers[0].emit('message', { type: 'batch', items: [['C:\\Docs\\new.txt', 0]] });
+    workers[0].emit('message', { type: 'done', roots: ['C:\\Docs'], unreadable: ['D:\\Offline'] }); workers[0].emit('exit', 0);
+    assert.deepEqual(Array.from(main.idx.paths), ['C:\\Docs\\new.txt', 'D:\\Offline\\keep.txt']);
+    await main.test.flush();
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('folder monitoring batches changes, skips excluded trees and retries while scans are busy', async () => {
+  const listeners = new Map();
+  const { watchFolders } = loadIsolated('src/folder-watch.js', { fs: { watch: (root, _options, callback) => {
+    listeners.set(root, callback); return { on: () => {}, close: () => listeners.delete(root) };
+  } } });
+  const batches = [];
+  let busy = true;
+  const watcher = watchFolders((roots) => { batches.push(roots); return !busy; }, () => ['node_modules']);
+  const root = path.resolve('C:\\Docs');
+  try {
+    watcher.setRoots([root, path.join(root, 'Nested')]);
+    assert.equal(listeners.size, 1);
+    const changed = listeners.get(root);
+    changed('rename', 'node_modules\\ignored.txt');
+    changed('rename', 'New.txt'); changed('change', 'Other.txt');
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    assert.deepEqual(Array.from(batches[0]), [root]);
+    busy = false;
+    await new Promise((resolve) => setTimeout(resolve, 1050));
+    assert.equal(batches.length, 2);
+  } finally { watcher.close(); }
+  assert.equal(listeners.size, 0);
 });
 
 test('launcher resizing animates only the bottom edge and retargets safely', async () => {
@@ -234,6 +316,62 @@ test('normal search ranks apps first across providers before limiting and retain
   assert.equal(suggestions.results[0].id, 'web', 'Empty suggestions should keep their existing order');
 });
 
+test('fast search results arrive before slow sources and final results keep app priority', async () => {
+  let finish;
+  const { main } = mainHarness(os.tmpdir(), [
+    { search: () => [{ id: 'camera', title: 'Camera', type: 'app', score: 100, actions: ['launch-app'] }] },
+    { search: () => new Promise((resolve) => { finish = resolve; }) },
+  ]);
+  const updates = [];
+  const pending = main.search('camera', (response) => updates.push(response));
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(updates[0].results[0].id, 'camera');
+  assert.equal(updates[0].pending, true);
+  finish([{ id: 'file', title: 'Camera.txt', type: 'file', score: 9000, actions: ['open'] }]);
+  const final = await pending;
+  assert.equal(final.pending, false);
+  assert.deepEqual(Array.from(final.results, (r) => r.id), ['camera', 'file']);
+});
+
+test('file search worker matches the reference matcher and atomically applies rebuilds and root changes', async () => {
+  const { FileSearch } = require('../src/file-search');
+  const worker = new FileSearch();
+  const idx = fixture(['C:\\Docs\\Camera.txt', 'C:\\Apps\\Windows Camera.lnk', 'D:\\Offline\\Camera notes.txt', 'C:\\Docs\\Budget.xlsx'], [0, 2, 0, 0]);
+  try {
+    worker.add(idx.paths.map((p, i) => [p, idx.flags[i]]));
+    for (const [query, scope] of [['camera', null], ['budget', null], ['docs camera', null], ['wndcam', null], ['', 'apps']]) {
+      const ctx = context(idx, query, scope);
+      assert.deepEqual((await worker.search(ctx)).map((r) => r.id), (await files.search(ctx)).map((r) => r.id));
+    }
+    worker.begin(); worker.add([['C:\\Docs\\New.txt', 0]], true);
+    assert((await worker.search(context(idx, 'camera'))).length > 0);
+    worker.commit();
+    assert.equal((await worker.search(context(idx, 'camera'))).length, 0);
+    assert.equal((await worker.search(context(idx, 'new')))[0].title, 'New.txt');
+    worker.add([['C:\\Docs\\Private\\Keep.txt', 0], ['D:\\Offline\\Keep.txt', 0]]);
+    worker.removeRoots(['C:\\Docs'], ['C:\\Docs\\Private']);
+    assert.deepEqual((await worker.search(context(idx, 'keep'))).map((r) => r.title), ['Keep.txt', 'Keep.txt']);
+    assert.equal((await worker.search(context(idx, 'new'))).length, 0);
+  } finally { await worker.close(); }
+});
+
+test('expired app snapshots return cached data while one refresh runs in the background', async () => {
+  const calls = [];
+  const { cachedSnapshot } = loadIsolated('src/powershell.js', {
+    child_process: { execFile: (_file, _args, _options, callback) => calls.push(callback) },
+  });
+  const read = cachedSnapshot('Get-StartApps', 0, true);
+  const cold = read();
+  calls[0](null, '[{"Name":"Camera"}]');
+  assert.equal((await cold)[0].Name, 'Camera');
+  assert.equal((await read())[0].Name, 'Camera');
+  assert.equal((await read())[0].Name, 'Camera');
+  assert.equal(calls.length, 2);
+  const fresh = read.refresh();
+  calls[1](null, '[{"Name":"New app"}]');
+  assert.equal((await fresh)[0].Name, 'New app');
+});
+
 test('real indexer skips dependencies, respects exclusions, and reports readable hot roots', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumos-crawl-test-'));
   try {
@@ -250,6 +388,25 @@ test('real indexer skips dependencies, respects exclusions, and reports readable
     const entries = messages.filter((m) => m.type === 'batch').flatMap((m) => m.items);
     assert.equal(entries.length, 1); assert.equal(path.basename(entries[0][0]), 'Visible.txt');
     assert.deepEqual(messages.find((m) => m.type === 'done').roots, [directory]);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('a changed subfolder cannot bypass an excluded virtual-environment ancestor', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lumos-boundary-test-'));
+  try {
+    const environment = path.join(directory, 'custom-python');
+    const library = path.join(environment, 'Lib');
+    fs.mkdirSync(library, { recursive: true });
+    fs.writeFileSync(path.join(environment, 'pyvenv.cfg'), 'home = python');
+    fs.writeFileSync(path.join(library, 'Noise.txt'), 'Dependency');
+    const messages = await new Promise((resolve, reject) => {
+      const messages = [];
+      const worker = new Worker(path.resolve(__dirname, '../src/indexer.js'), { workerData: { mode: 'hot', roots: [library], boundaryRoots: [directory] } });
+      worker.on('message', (message) => messages.push(message)); worker.on('error', reject);
+      worker.on('exit', () => resolve(messages));
+    });
+    assert.equal(messages.filter((m) => m.type === 'batch').flatMap((m) => m.items).length, 0);
+    assert.deepEqual(messages.find((m) => m.type === 'done').roots, [library]);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 

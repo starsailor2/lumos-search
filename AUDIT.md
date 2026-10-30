@@ -1,4 +1,16 @@
-# Lumos Search 2.0.1 audit and repair
+# Lumos Search audit and improvement record
+
+## 2.1.0 sequential improvements and official vector interface
+
+The first planned increments are implemented: searchable index commands, separate recent-folder refresh and full rebuild, shared live scan status, unreadable-location reporting, queued rebuilds, automatic batched file monitoring, and recovery scans. Full rebuilds now retain entries under unreadable locations. Hot rescans check their ancestors so a change inside an excluded directory or Python environment cannot bypass the original exclusion policy.
+
+The application catalog warms at startup and serves cached results during refresh. The search coordinator can deliver partial results while other providers finish, keeps application priority, rejects stale query updates, and preserves deliberate selection by identity. File matching runs in a dedicated worker, updated through batches and staged commits instead of resending the whole index per query. The main process retains metadata needed by existing providers; complete index ownership and a faster candidate index remain follow-up work.
+
+The twenty custom SVG illustrations and native bitmap icon extraction were replaced by official Flaticon Uicons 4.0 Thin Rounded and vector brand glyphs. The local fonts, publisher license, source version, mappings, and SHA-256 checksums are bundled. Settings and README provide attribution. Search, file types, action controls and keyboard hints share the same vector system. Actual emoji results remain characters. Inline `@` mode suggestions and data-folder access improve feature discovery. Preview is only offered for supported text formats.
+
+Verification includes 32 regression tests, TypeScript, native-input Electron checks, actual vector-font loading, automatic create/rename/delete updates, exclusion boundaries, worker/reference result comparison, refresh/rebuild controls, app priority, modes, and refreshed real-app screenshots. The latest synthetic worker run returned matching results with warm query samples of 35/34 ms at 100,000 paths and 513/433 ms at one million paths. First-query samples included queued ingestion (312 ms / 3,900 ms). Process RSS was 163 MB / 354 MB in that benchmark, including fixtures and both index copies; these are local synthetic measurements, not installed-app guarantees.
+
+The README now documents maintenance and all current sources, including the configuration-based limits of favourites/workflows and the lack of application-level encryption for persisted local secrets/history. `IMPROVEMENTS.md` records remaining scaling, preview, privacy, release and hardware-validation work; it does not claim those items are complete.
 
 ## 2.0.5 application search priority
 

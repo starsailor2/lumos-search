@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
-  <defs><linearGradient id="web-globe" x1="10" y1="6" x2="37" y2="43" gradientUnits="userSpaceOnUse"><stop stop-color="#69E1EC"/><stop offset="1" stop-color="#4777E2"/></linearGradient></defs>
-  <circle cx="24" cy="24" r="20" fill="url(#web-globe)"/>
-  <ellipse cx="24" cy="24" rx="9" ry="19" stroke="#D8FAFF" stroke-width="2.2"/>
-  <path d="M5 24h38M8 13c8 6 24 6 32 0M8 35c8-6 24-6 32 0" stroke="#D8FAFF" stroke-width="2.2"/>
-  <path d="m35 28 10 3-5 3-2 6-3-12Z" fill="#FFE49C" stroke="#FFF5D6" stroke-width="1.2" stroke-linejoin="round"/>
-</svg>

@@ -1,12 +1,14 @@
 import { useEffect, useState, useCallback } from 'react';
-import type { Appearance, SearchResponse } from '../types';
+import type { Appearance, SearchResponse, IndexStatus } from '../types';
 
 export function useLumos() {
   const [appearance, setAppearance] = useState<Appearance | null>(null);
-  const [indexStatus, setIndexStatus] = useState({ status: 'starting', indexed: 0 });
+  const [indexStatus, setIndexStatus] = useState<IndexStatus>({ status: 'starting', indexed: 0, scanned: 0, startedAt: 0, mode: null, queued: null, unreadable: [], unreadableCount: 0, error: '', lastIndexUpdate: 0 });
 
   useEffect(() => {
-    const offStatus = window.lumos.onStatus(setIndexStatus);
+    let receivedStatus = false;
+    const offStatus = window.lumos.onStatus((status) => { receivedStatus = true; setIndexStatus(status); });
+    window.lumos.getIndexStatus().then((status) => { if (!receivedStatus) setIndexStatus(status); }).catch(console.error);
     const offShown = window.lumos.onShown((d) => {
       if (d?.appearance) setAppearance(d.appearance);
       else window.lumos.getAppearance().then(setAppearance);
@@ -31,9 +33,8 @@ export function useLumos() {
     return () => media.removeEventListener('change', apply);
   }, [appearance]);
 
-  const search = useCallback(async (q: string): Promise<SearchResponse> => {
-    const response = await window.lumos.search(q);
-    setIndexStatus({ status: response.status, indexed: response.indexed });
+  const search = useCallback(async (q: string, requestId?: number): Promise<SearchResponse> => {
+    const response = await window.lumos.search(q, requestId);
     return response;
   }, []);
 

@@ -36,10 +36,20 @@ app.whenReady().then(async () => {
     win.webContents.setBackgroundThrottling(false);
     await until(() => win.webContents.executeJavaScript('Boolean(window.lumos && document.querySelector("input"))').catch(() => false), 'Renderer did not initialize');
     await until(() => main.idx.status === 'ready', 'Index did not complete');
+    const automatic = path.join(fixtures, 'Automatic Watch Note.txt');
+    fs.writeFileSync(automatic, 'New file detected automatically');
+    await until(async () => (await main.search('@files automatic watch')).results.some((r) => r.title === 'Automatic Watch Note.txt'), 'Watcher did not index a created file');
+    fs.renameSync(automatic, path.join(fixtures, 'Automatic Renamed Note.txt'));
+    await until(async () => (await main.search('@files automatic renamed')).results.some((r) => r.title === 'Automatic Renamed Note.txt'), 'Watcher did not index a renamed file');
+    fs.unlinkSync(path.join(fixtures, 'Automatic Renamed Note.txt'));
+    await until(async () => !(await main.search('@files automatic')).results.length, 'Watcher retained a deleted file');
     assert((await win.webContents.executeJavaScript('window.lumos.search("quarterly unique")')).results.some((r) => r.title === 'Quarterly Report Unique.txt'));
     assert((await win.webContents.executeJavaScript('window.lumos.search("project alpha")')).results.some((r) => r.type === 'folder'));
     assert((await win.webContents.executeJavaScript('window.lumos.search("grinning")')).results.some((r) => r.type === 'emoji'));
     assert((await win.webContents.executeJavaScript('window.lumos.search("lorem")')).results.some((r) => r.id === 'ext:lorem'));
+    for (const [query, action] of [['reindex', 'rebuild-index'], ['refresh index', 'refresh-index'], ['index settings', 'open-settings']]) {
+      assert((await win.webContents.executeJavaScript(`window.lumos.search(${JSON.stringify(query)})`)).results.some((r) => r.actions.includes(action)));
+    }
     win.setBounds({ x: 100, y: 80, width: 600, height: 60 }); win.show(); win.focus();
     await win.webContents.executeJavaScript('window.originalInput = document.querySelector("input"); originalInput.focus();');
     const anchor = win.getBounds();
@@ -94,20 +104,30 @@ app.whenReady().then(async () => {
     await win.webContents.executeJavaScript('document.querySelector(".action-dock button:last-child").click()');
     await typeQuery('@files color palette');
     await until(() => win.webContents.executeJavaScript('document.querySelectorAll(".result-card").length === 8 && document.querySelector("#search-results").getAttribute("aria-busy") === "false"'), 'Colored file results did not render');
-    await until(() => win.webContents.executeJavaScript('Array.from(document.querySelectorAll(".result-card .illustrated-icon")).every((image) => image.complete && image.naturalWidth > 0)'), 'SVG assets did not load');
-    const iconStyles = JSON.parse(await win.webContents.executeJavaScript(`JSON.stringify(Array.from(document.querySelectorAll('.result-card')).map((row) => ({ title: row.querySelector('.item-title').textContent, tone: row.querySelector('.item-icon-box').dataset.tone, artwork: row.querySelector('.illustrated-icon').dataset.icon, filter: getComputedStyle(row.querySelector('.item-icon-box')).filter, color: getComputedStyle(row.querySelector('.item-icon-box')).color })))`));
+    await win.webContents.executeJavaScript('document.fonts.ready.then(() => true)');
+    assert(await win.webContents.executeJavaScript('document.fonts.check(\'27px "uicons-thin-rounded"\')'), 'Official vector icon font did not load');
+    const iconStyles = JSON.parse(await win.webContents.executeJavaScript(`JSON.stringify(Array.from(document.querySelectorAll('.result-card')).map((row) => ({ title: row.querySelector('.item-title').textContent, tone: row.querySelector('.item-icon-box').dataset.tone, artwork: row.querySelector('.interface-icon').dataset.icon, font: getComputedStyle(row.querySelector('.interface-icon'), '::before').fontFamily, glyph: getComputedStyle(row.querySelector('.interface-icon'), '::before').content, filter: getComputedStyle(row.querySelector('.item-icon-box')).filter, color: getComputedStyle(row.querySelector('.item-icon-box')).color })))`));
     for (const [extension, tone] of Object.entries({ pdf: 'red', xlsx: 'green', zip: 'yellow', docx: 'blue', png: 'violet', mp4: 'red', mp3: 'pink', ts: 'blue' })) {
       const icon = iconStyles.find((entry) => entry.title === `Color Palette.${extension}`);
       assert.equal(icon.tone, tone); assert.equal(icon.filter, 'none');
+      assert(icon.font.includes('uicons-thin-rounded')); assert(icon.glyph !== 'none');
     }
     assert.equal(new Set(iconStyles.map((entry) => entry.color)).size, 6);
     for (const [extension, artwork] of Object.entries({ pdf: 'pdf', xlsx: 'spreadsheet', zip: 'archive', docx: 'file', png: 'image', mp4: 'video', mp3: 'audio', ts: 'code' })) assert.equal(iconStyles.find((entry) => entry.title === `Color Palette.${extension}`).artwork, artwork);
+    const pdfAt = iconStyles.findIndex((entry) => entry.title === 'Color Palette.pdf');
+    for (let i = 0; i < pdfAt; i++) { win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Down' }); win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Down' }); }
+    await until(() => win.webContents.executeJavaScript('document.querySelector(".result-card[aria-selected=true] .item-title")?.textContent === "Color Palette.pdf"'), 'Keyboard selection failed');
+    assert(await win.webContents.executeJavaScript('!Array.from(document.querySelectorAll(".action-dock button")).some((button) => button.textContent === "Preview")'), 'Unsupported PDF preview should not be offered');
     await settleHeight();
     fs.writeFileSync(path.join(output, 'launcher-colors.png'), (await win.webContents.capturePage()).toPNG());
     await typeQuery('@folders color palette');
-    await until(() => win.webContents.executeJavaScript('Boolean(document.querySelector(".result-card img[data-icon=folder]")?.naturalWidth)'), 'Folder illustration did not render');
+    await until(() => win.webContents.executeJavaScript('Boolean(document.querySelector(".result-card .interface-icon[data-icon=folder]"))'), 'Official folder icon did not render');
     await settleHeight();
     fs.writeFileSync(path.join(output, 'launcher-folder.png'), (await win.webContents.capturePage()).toPNG());
+    await typeQuery('@fi');
+    await until(() => win.webContents.executeJavaScript('document.querySelector(".result-card .item-title")?.textContent === "@files"'), 'Search mode suggestions did not render');
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' }); win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' });
+    await until(() => win.webContents.executeJavaScript('document.querySelector("input").value === "@files "'), 'Selecting a mode did not update the search bar');
     const registered = await require('../src/providers/apps').listStartApps();
     for (const [query, name] of [['Camera', 'Camera'], ['WhatsApp', 'WhatsApp'], ['File Manager', 'File Explorer']]) {
       if (!registered.some((entry) => entry.Name === name)) continue;
@@ -122,13 +142,28 @@ app.whenReady().then(async () => {
     await typeQuery('Camera');
     await until(() => win.webContents.executeJavaScript('document.querySelector("#search-results").getAttribute("aria-busy") === "false" && document.querySelector("input").value === "Camera" && Boolean(document.querySelector(".result-card"))'), 'Application priority results did not render');
     await settleHeight();
+    assert(await win.webContents.executeJavaScript('document.querySelectorAll(".result-card img, .result-card svg, .search-header img, .search-header svg").length === 0'), 'Interface icons must be vector glyphs');
     fs.writeFileSync(path.join(output, 'launcher-app-priority.png'), (await win.webContents.capturePage()).toPNG());
     const notepad = registered.find((entry) => entry.AppID.includes('WindowsNotepad'));
+    if (registered.some((entry) => entry.Name === 'WhatsApp')) {
+      await typeQuery('WhatsApp');
+      await until(() => win.webContents.executeJavaScript('Boolean(document.querySelector(".result-card .uicon-brand-whatsapp")) && document.querySelector("#search-results").getAttribute("aria-busy") === "false"'), 'Vector WhatsApp brand icon did not render');
+      await win.webContents.executeJavaScript('document.fonts.ready.then(() => true)');
+      assert(await win.webContents.executeJavaScript('document.fonts.check(\'27px "uicons-brands"\') && getComputedStyle(document.querySelector(".uicon-brand-whatsapp"), "::before").fontFamily.includes("uicons-brands")'));
+    }
     if (notepad) assert((await win.webContents.executeJavaScript(`window.lumos.search(${JSON.stringify('@apps ' + notepad.Name)})`)).results.some((entry) => entry.type === 'app' && entry.title === notepad.Name));
     await win.webContents.executeJavaScript('window.lumos.openSettings()');
     await until(() => BrowserWindow.getAllWindows().length === 2, 'Settings did not open');
     const settings = BrowserWindow.getAllWindows().find((w) => w !== win);
     await until(() => settings.webContents.executeJavaScript('Boolean(window.lumosSettings && document.querySelector("#theme"))').catch(() => false), 'Settings did not initialize');
+    assert((await settings.webContents.executeJavaScript('window.lumosSettings.getIndexStatus()')).indexed > 0);
+    await until(() => settings.webContents.executeJavaScript('document.querySelector("#indexStatus").textContent.includes("Ready")'), 'Live index status missing from settings');
+    fs.writeFileSync(path.join(fixtures, 'Freshly Added Note.txt'), 'New file');
+    await settings.webContents.executeJavaScript('document.querySelector("#refreshIndex").click()');
+    await until(async () => (await main.search('@files freshly added')).results.some((r) => r.title === 'Freshly Added Note.txt'), 'Refresh did not index the new file');
+    await until(() => main.idx.status === 'ready', 'Refresh did not complete');
+    await settings.webContents.executeJavaScript('document.querySelector("#rebuildIndex").click()');
+    await until(() => main.idx.status === 'ready', 'Rebuild did not complete');
     await settings.webContents.executeJavaScript('document.fonts.ready.then(() => true)'); await pause(150);
     fs.writeFileSync(path.join(output, 'settings-dark.png'), (await settings.webContents.capturePage()).toPNG());
     await settings.webContents.executeJavaScript('window.lumosSettings.updateConfig({ appearance: { theme: "light", accentColor: "#8957e5", animations: false } })');
@@ -142,5 +177,5 @@ app.whenReady().then(async () => {
     if (win && !win.isDestroyed()) console.error('Layout diagnostic:', win.getBounds(), await win.webContents.executeJavaScript('JSON.stringify({ panel: document.querySelector(".results-content")?.getBoundingClientRect().toJSON(), query: document.querySelector("input")?.value, launcher: document.querySelector(".launcher")?.className, deviceScale: devicePixelRatio })').catch(() => 'unavailable'));
     exitCode = 1;
   }
-  finally { app.exit(exitCode); }
+  finally { await main.stopServices(); app.exit(exitCode); }
 });

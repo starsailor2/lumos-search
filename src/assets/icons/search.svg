@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
-  <defs><linearGradient id="search-ring" x1="7" y1="6" x2="32" y2="33" gradientUnits="userSpaceOnUse"><stop stop-color="#7DE6ED"/><stop offset="1" stop-color="#4B86F0"/></linearGradient><linearGradient id="search-handle" x1="29" y1="29" x2="43" y2="43" gradientUnits="userSpaceOnUse"><stop stop-color="#B1A1FF"/><stop offset="1" stop-color="#8061D9"/></linearGradient></defs>
-  <path d="m30 30 11 11" stroke="url(#search-handle)" stroke-width="8" stroke-linecap="round"/>
-  <circle cx="20" cy="20" r="15" fill="url(#search-ring)"/>
-  <circle cx="20" cy="20" r="10.5" fill="#D2F7FF"/>
-  <path d="M12 20a8 8 0 0 1 8-8" stroke="#FFF" stroke-width="2.4" stroke-linecap="round"/>
-  <path d="m38 3 1.5 4.5L44 9l-4.5 1.5L38 15l-1.5-4.5L32 9l4.5-1.5L38 3Z" fill="#FFD575"/>
-</svg>

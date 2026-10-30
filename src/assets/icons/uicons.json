@@ -1,0 +1,231 @@
+{
+  "version": "4.0.0",
+  "style": "thin-rounded",
+  "source": "https://cdn-uicons.flaticon.com/4.0.0/uicons-thin-rounded/",
+  "fontSha256": "b1468d0fdce3128a2bce0de61fdaa02d39dad4a9d41bc11f9ad99e2b6a055e2c",
+  "brandFontSha256": "43d7a6e7904140e729b83708a3d2b42f2c877bd4fa2237427646f854e835b050",
+  "icons": {
+    "search": {
+      "name": "search",
+      "codepoint": "f13a"
+    },
+    "folder": {
+      "name": "folder",
+      "codepoint": "e8d6"
+    },
+    "file": {
+      "name": "document",
+      "codepoint": "e6de"
+    },
+    "pdf": {
+      "name": "file-pdf",
+      "codepoint": "e858"
+    },
+    "spreadsheet": {
+      "name": "table",
+      "codepoint": "f364"
+    },
+    "image": {
+      "name": "picture",
+      "codepoint": "ef35"
+    },
+    "video": {
+      "name": "video-camera",
+      "codepoint": "f57d"
+    },
+    "audio": {
+      "name": "music-alt",
+      "codepoint": "ed9f"
+    },
+    "archive": {
+      "name": "file-zipper",
+      "codepoint": "e86b"
+    },
+    "code": {
+      "name": "file-code",
+      "codepoint": "e842"
+    },
+    "app": {
+      "name": "apps",
+      "codepoint": "e0c4"
+    },
+    "clipboard": {
+      "name": "clipboard",
+      "codepoint": "e4c2"
+    },
+    "web": {
+      "name": "globe",
+      "codepoint": "e974"
+    },
+    "settings": {
+      "name": "settings",
+      "codepoint": "f163"
+    },
+    "window": {
+      "name": "browser",
+      "codepoint": "e2fe"
+    },
+    "game": {
+      "name": "gamepad",
+      "codepoint": "e93b"
+    },
+    "process": {
+      "name": "microchip",
+      "codepoint": "ed11"
+    },
+    "workflow": {
+      "name": "diagram-project",
+      "codepoint": "e67a"
+    },
+    "ai": {
+      "name": "sparkles",
+      "codepoint": "f26d"
+    },
+    "calculator": {
+      "name": "calculator",
+      "codepoint": "e357"
+    },
+    "close": {
+      "name": "cross-small",
+      "codepoint": "e5eb"
+    },
+    "enter": {
+      "name": "arrow-turn-down-left",
+      "codepoint": "e110"
+    },
+    "preview": {
+      "name": "eye",
+      "codepoint": "e7bb"
+    },
+    "copy": {
+      "name": "copy",
+      "codepoint": "e5ab"
+    },
+    "paste": {
+      "name": "paste",
+      "codepoint": "ee7f"
+    },
+    "refresh": {
+      "name": "refresh",
+      "codepoint": "f05e"
+    },
+    "open": {
+      "name": "arrow-up-right-from-square",
+      "codepoint": "e11d"
+    },
+    "reveal": {
+      "name": "folder-open",
+      "codepoint": "e8eb"
+    },
+    "keyboard": {
+      "name": "keyboard",
+      "codepoint": "eb7f"
+    },
+    "info": {
+      "name": "info",
+      "codepoint": "eb10"
+    },
+    "check": {
+      "name": "check",
+      "codepoint": "e430"
+    },
+    "camera": {
+      "name": "camera",
+      "codepoint": "e385"
+    },
+    "history": {
+      "name": "time-past",
+      "codepoint": "f3fa"
+    },
+    "favourite": {
+      "name": "star",
+      "codepoint": "f2e0"
+    },
+    "link": {
+      "name": "link",
+      "codepoint": "ec21"
+    },
+    "emoji": {
+      "name": "smile",
+      "codepoint": "f214"
+    },
+    "lock": {
+      "name": "lock",
+      "codepoint": "ec4f"
+    },
+    "sleep": {
+      "name": "moon",
+      "codepoint": "ed67"
+    },
+    "power": {
+      "name": "power",
+      "codepoint": "efb7"
+    },
+    "volume": {
+      "name": "volume",
+      "codepoint": "f59d"
+    },
+    "volume-down": {
+      "name": "volume-down",
+      "codepoint": "f59f"
+    },
+    "muted": {
+      "name": "volume-mute",
+      "codepoint": "f5a0"
+    },
+    "trash": {
+      "name": "trash",
+      "codepoint": "f463"
+    }
+  },
+  "brands": {
+    "whatsapp": {
+      "name": "whatsapp",
+      "codepoint": "f5f5"
+    },
+    "firefox": {
+      "name": "firefox",
+      "codepoint": "e896"
+    },
+    "spotify": {
+      "name": "spotify",
+      "codepoint": "f285"
+    },
+    "slack": {
+      "name": "slack",
+      "codepoint": "f1f3"
+    },
+    "discord": {
+      "name": "discord",
+      "codepoint": "e6b9"
+    },
+    "telegram": {
+      "name": "telegram",
+      "codepoint": "f39c"
+    },
+    "zoom": {
+      "name": "zoom",
+      "codepoint": "f659"
+    },
+    "github": {
+      "name": "github",
+      "codepoint": "e965"
+    },
+    "windows": {
+      "name": "windows",
+      "codepoint": "f618"
+    },
+    "microsoft": {
+      "name": "microsoft",
+      "codepoint": "ed1b"
+    },
+    "microsoft-edge": {
+      "name": "microsoft-edge",
+      "codepoint": "ed1c"
+    },
+    "skype": {
+      "name": "skype",
+      "codepoint": "f1ef"
+    }
+  }
+}
